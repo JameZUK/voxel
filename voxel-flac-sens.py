@@ -217,7 +217,7 @@ if args.command == "listdevs":
 else:
     pdat.samplequeue = queue.Queue()
     pdat.preque = queue.Queue()
-pdat.running = True
+    pdat.running = True
     pdat.rt = RecordTimer(pdat)
     pdat.processor = StreamProcessor(pdat)
     pdat.processor.start()
