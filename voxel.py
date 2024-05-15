@@ -1,25 +1,41 @@
 #!/usr/bin/python3
 
 import argparse
-import sounddevice as sd
+from ctypes import *
+from contextlib import contextmanager
+import sys
+import tty
+import termios
+import pyaudio
 import threading
 import time
 import numpy as np
 import queue
 import wave
-import sys
-import tty
-import termios
 
-FORMAT = np.int16
+FORMAT = pyaudio.paInt16
 CHANNELS = 1
 
 class VoxDat:
     def __init__(self):
         self.devindex = self.threshold = self.saverecs = self.hangdelay = self.chunk = self.devrate = self.current = self.rcnt = 0
         self.recordflag = self.running = self.peakflag = False
-        self.rt = self.km = self.ttysettings = self.ttyfd = self.devstream = self.processor = None
+        self.rt = self.km = self.ttysettings = self.ttyfd = self.pyaudio = self.devstream = self.processor = None
         self.preque = self.samplequeue = None
+
+ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
+
+def py_error_handler(filename, line, function, err, fmt):
+    pass
+
+c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
+
+@contextmanager
+def noalsaerr():
+    asound = cdll.LoadLibrary('libasound.so')
+    asound.snd_lib_error_set_handler(c_error_handler)
+    yield
+    asound.snd_lib_error_set_handler(None)
 
 class StreamProcessor(threading.Thread):
     def __init__(self, pdat: VoxDat):
@@ -36,7 +52,7 @@ class StreamProcessor(threading.Thread):
             if data is None:
                 time.sleep(0.1)
             else:
-                data2 = np.frombuffer(data, dtype=FORMAT)
+                data2 = np.frombuffer(data, dtype=np.int16)
                 peak = np.average(np.abs(data2))
                 peak = (100 * peak) / 2**12
                 self.pdat.current = int(peak)
@@ -48,7 +64,7 @@ class StreamProcessor(threading.Thread):
                         print("opening file " + self.filename + "\r")
                         self.wf = wave.open(self.filename, 'wb')
                         self.wf.setnchannels(CHANNELS)
-                        self.wf.setsampwidth(2)  # 2 bytes for FORMAT np.int16
+                        self.wf.setsampwidth(self.pdat.pyaudio.get_sample_size(FORMAT))
                         self.wf.setframerate(self.pdat.devrate)
                         if self.pdat.rcnt != 0:
                             self.pdat.rcnt = 0
@@ -66,12 +82,12 @@ class StreamProcessor(threading.Thread):
                         self.pdat.rcnt += 1
                     self.pdat.preque.put(data)
              
-    def ReadCallback(self, indata, frames, time, status):
-        self.pdat.samplequeue.put(indata.tobytes())
+    def ReadCallback(self, indata, framecount, timeinfo, status):
+        self.pdat.samplequeue.put(indata)
         if self.pdat.running:
-            return
+            return (None, pyaudio.paContinue)
         else:
-            raise sd.CallbackStop()
+            return (None, pyaudio.paAbort)
 
     def close(self):
         if self.wf:
@@ -193,10 +209,14 @@ pdat.saverecs = args.saverecs
 pdat.hangdelay = args.hangdelay
 pdat.chunk = args.chunk
 
+with noalsaerr():
+    pdat.pyaudio = pyaudio.PyAudio()
+
 if args.command == "listdevs":
     print("Device Information:")
-    for i, device in enumerate(sd.query_devices()):
-        print(f"Device {i}: {device['name']} - Max Input Channels: {device['max_input_channels']} - Host API: {device['hostapi']}")
+    for i in range(pdat.pyaudio.get_device_count()):
+        dev_info = pdat.pyaudio.get_device_info_by_index(i)
+        print(f"Device {i}: {dev_info['name']} - Max Input Channels: {dev_info['maxInputChannels']} - Host API: {dev_info['hostApi']}")
 else:
     pdat.samplequeue = queue.Queue()
     pdat.preque = queue.Queue()
@@ -208,19 +228,20 @@ else:
     pdat.rt.start()
 
     # Select the correct ALSA device with valid input channels
-    dev_info = sd.query_devices(pdat.devindex)
-    if dev_info['max_input_channels'] < CHANNELS:
+    dev_info = pdat.pyaudio.get_device_info_by_index(pdat.devindex)
+    if dev_info['maxInputChannels'] < CHANNELS:
         print(f"Error: Device {pdat.devindex} does not support {CHANNELS} channel(s). Please select a valid device.")
         sys.exit(1)
     
-    pdat.devrate = int(dev_info['default_samplerate'])
-    pdat.devstream = sd.InputStream(device=pdat.devindex,
-                                    channels=CHANNELS,
-                                    samplerate=pdat.devrate,
-                                    callback=pdat.processor.ReadCallback,
-                                    blocksize=pdat.chunk,
-                                    dtype=FORMAT)
-    pdat.devstream.start()
+    pdat.devrate = int(dev_info.get('defaultSampleRate'))
+    pdat.devstream = pdat.pyaudio.open(format=FORMAT,
+                                       channels=CHANNELS,
+                                       rate=pdat.devrate,
+                                       input=True,
+                                       input_device_index=pdat.devindex,
+                                       frames_per_buffer=pdat.chunk,
+                                       stream_callback=pdat.processor.ReadCallback)
+    pdat.devstream.start_stream()
 
     pdat.km = KBListener(pdat)
     pdat.km.start()
