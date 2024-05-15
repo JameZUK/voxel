@@ -15,7 +15,6 @@ import time
 import numpy as np
 import queue
 import wave
-import os
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
@@ -41,21 +40,10 @@ def noalsaerr():
     yield
     asound.snd_lib_error_set_handler(None)
 
-@contextmanager
-def suppress_stderr():
-    devnull = os.open(os.devnull, os.O_WRONLY)
-    old_stderr = os.dup(2)
-    os.dup2(devnull, 2)
-    try:
-        yield
-    finally:
-        os.dup2(old_stderr, 2)
-        os.close(devnull)
-
 class StreamProcessor(threading.Thread):
     def __init__(self, pdat: VoxDat):
         threading.Thread.__init__(self)
-        self.daemon = True
+        self.setDaemon(True)
         self.pdat = pdat
         self.rt = self.pdat.rt
         self.wf = None
@@ -113,8 +101,8 @@ class StreamProcessor(threading.Thread):
 class RecordTimer(threading.Thread):
     def __init__(self, pdat: VoxDat):
         threading.Thread.__init__(self)
-        self.daemon = True
         self.pdat = pdat
+        self.setDaemon(True)
         self.timer = 0
         
     def run(self):
@@ -142,7 +130,7 @@ class KBListener(threading.Thread):
     def __init__(self, pdat: VoxDat):
         threading.Thread.__init__(self)
         self.pdat = pdat
-        self.daemon = True
+        self.setDaemon(True)
 
     def treset(self):
         termios.tcsetattr(self.pdat.ttyfd, termios.TCSADRAIN, self.pdat.ttysettings)
@@ -228,10 +216,9 @@ with noalsaerr():
     pdat.pyaudio = pyaudio.PyAudio()
 
 if args.command == "listdevs":
-    with suppress_stderr():
-        print("Device Information:")
-        for i in range(pdat.pyaudio.get_device_count()):
-            print("Dev#: ", i, pdat.pyaudio.get_device_info_by_index(i).get('name'))
+    print("Device Information:")
+    for i in range(pdat.pyaudio.get_device_count()):
+        print("Dev#: ", i, pdat.pyaudio.get_device_info_by_index(i).get('name'))
 else:
     pdat.samplequeue = queue.Queue()
     pdat.preque = queue.Queue()
@@ -242,22 +229,14 @@ else:
     pdat.processor.start()
     pdat.rt.start()
 
-    with suppress_stderr():
-        dev_info = pdat.pyaudio.get_device_info_by_index(pdat.devindex)
-    pdat.devrate = int(dev_info.get('defaultSampleRate'))
-    
-    if dev_info.get('maxInputChannels') < CHANNELS:
-        print(f"Error: The device does not support {CHANNELS} input channels")
-        sys.exit(1)
-    
-    with suppress_stderr():
-        pdat.devstream = pdat.pyaudio.open(format=FORMAT,
-                                           channels=CHANNELS,
-                                           rate=pdat.devrate,
-                                           input=True,
-                                           input_device_index=pdat.devindex,
-                                           frames_per_buffer=pdat.chunk,
-                                           stream_callback=pdat.processor.ReadCallback)
+    pdat.devrate = int(pdat.pyaudio.get_device_info_by_index(pdat.devindex).get('defaultSampleRate'))
+    pdat.devstream = pdat.pyaudio.open(format=FORMAT,
+                                       channels=CHANNELS,
+                                       rate=pdat.devrate,
+                                       input=True,
+                                       input_device_index=pdat.devindex,
+                                       frames_per_buffer=pdat.chunk,
+                                       stream_callback=pdat.processor.ReadCallback)
     pdat.devstream.start_stream()
 
     pdat.km = KBListener(pdat)
