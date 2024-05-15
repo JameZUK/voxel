@@ -43,7 +43,7 @@ def noalsaerr():
 class StreamProcessor(threading.Thread):
     def __init__(self, pdat: VoxDat):
         threading.Thread.__init__(self)
-        self.setDaemon(True)
+        self.daemon = True
         self.pdat = pdat
         self.rt = self.pdat.rt
         self.wf = None
@@ -102,7 +102,7 @@ class RecordTimer(threading.Thread):
     def __init__(self, pdat: VoxDat):
         threading.Thread.__init__(self)
         self.pdat = pdat
-        self.setDaemon(True)
+        self.daemon = True
         self.timer = 0
         
     def run(self):
@@ -130,7 +130,7 @@ class KBListener(threading.Thread):
     def __init__(self, pdat: VoxDat):
         threading.Thread.__init__(self)
         self.pdat = pdat
-        self.setDaemon(True)
+        self.daemon = True
 
     def treset(self):
         termios.tcsetattr(self.pdat.ttyfd, termios.TCSADRAIN, self.pdat.ttysettings)
@@ -219,7 +219,7 @@ if args.command == "listdevs":
     print("Device Information:")
     for i in range(pdat.pyaudio.get_device_count()):
         dev_info = pdat.pyaudio.get_device_info_by_index(i)
-        print(f"Device {i}: {dev_info['name']} - {dev_info['hostApi']}")
+        print(f"Device {i}: {dev_info['name']} - Max Input Channels: {dev_info['maxInputChannels']} - Host API: {dev_info['hostApi']}")
 else:
     pdat.samplequeue = queue.Queue()
     pdat.preque = queue.Queue()
@@ -230,8 +230,13 @@ else:
     pdat.processor.start()
     pdat.rt.start()
 
-    # Select the correct ALSA device
-    pdat.devrate = int(pdat.pyaudio.get_device_info_by_index(pdat.devindex).get('defaultSampleRate'))
+    # Select the correct ALSA device with valid input channels
+    dev_info = pdat.pyaudio.get_device_info_by_index(pdat.devindex)
+    if dev_info['maxInputChannels'] < CHANNELS:
+        print(f"Error: Device {pdat.devindex} does not support {CHANNELS} channel(s). Please select a valid device.")
+        sys.exit(1)
+    
+    pdat.devrate = int(dev_info.get('defaultSampleRate'))
     pdat.devstream = pdat.pyaudio.open(format=FORMAT,
                                        channels=CHANNELS,
                                        rate=pdat.devrate,
