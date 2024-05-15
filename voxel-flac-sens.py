@@ -51,9 +51,9 @@ class StreamProcessor(threading.Thread):
                 time.sleep(0.1)
             else:
                 data2 = np.frombuffer(data, dtype=np.int16)
-                peak = np.average(np.abs(data2))
-                peak = (100 * peak) / 2**12
-                self.pdat.current = int(peak)
+                peak = np.max(np.abs(data2))  # Changed peak calculation
+                peak_normalized = (100 * peak) / 2**15  # Normalized peak calculation
+                self.pdat.current = peak_normalized  # Adjusted peak storage
                 if self.pdat.current > self.pdat.threshold:
                     self.rt.reset_timer(time.time())
                 if self.pdat.recordflag:
@@ -107,7 +107,7 @@ class RecordTimer(threading.Thread):
                 self.pdat.recordflag = False
                 self.pdat.processor.close()
             if self.pdat.peakflag:
-                nf = min(self.pdat.current, 99)
+                nf = min(int(self.pdat.current), 99)  # Ensure nf is an integer
                 nf2 = nf
                 if nf > 50:
                     nf = int(min(50 + (nf - 50) / 3, 72))
@@ -153,13 +153,13 @@ class KBListener(threading.Thread):
                 print("h: help, f: show filename, k: show peak level, p: show peak")
                 print("q: quit, r: record on/off, v: set trigger level")
             elif ch == "k":
-                print(f"Peak/Trigger: {self.pdat.current} {self.pdat.threshold}")
+                print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")  # Display peak with 2 decimal places
             elif ch == "v":
                 self.treset()
                 pf = self.pdat.peakflag
                 self.pdat.peakflag = False
                 try:
-                    newpeak = int(input("New Peak Limit: "))
+                    newpeak = float(input("New Peak Limit: "))  # Changed to float
                 except ValueError:
                     newpeak = 0
                 if newpeak == 0:
@@ -178,7 +178,7 @@ class KBListener(threading.Thread):
                     print("Recording disabled")
                 else:
                     self.pdat.recordflag = True
-                    self.pdat.threshold = 1
+                    self.pdat.threshold = 0.3  # Adjusted default threshold
                     self.pdat.rt.reset_timer(time.time())
                     print("Recording enabled")
             elif ch == "p":
@@ -195,7 +195,7 @@ parser.add_argument("command", choices=['record', 'listdevs'], help="'record' or
 parser.add_argument("-c", "--chunk", type=int, default=8192, help="Chunk size [8192]")
 parser.add_argument("-d", "--devno", type=int, default=2, help="Device number [2]")
 parser.add_argument("-s", "--saverecs", type=int, default=8, help="Records to buffer ahead of threshold [8]")
-parser.add_argument("-t", "--threshold", type=int, default=30, help="Minimum volume threshold (1-99) [30]")  # Adjusted default threshold
+parser.add_argument("-t", "--threshold", type=float, default=0.3, help="Minimum volume threshold (0.1-99) [0.3]")  # Adjusted default threshold to float
 parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
 args = parser.parse_args()
 pdat = VoxDat()
@@ -217,6 +217,7 @@ if args.command == "listdevs":
 else:
     pdat.samplequeue = queue.Queue()
     pdat.preque = queue.Queue()
+
     pdat.running = True
     pdat.rt = RecordTimer(pdat)
     pdat.processor = StreamProcessor(pdat)
@@ -252,4 +253,5 @@ else:
 print("Done.")
 
 
-    
+                    
+
