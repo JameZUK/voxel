@@ -218,7 +218,8 @@ with noalsaerr():
 if args.command == "listdevs":
     print("Device Information:")
     for i in range(pdat.pyaudio.get_device_count()):
-        print("Dev#: ", i, pdat.pyaudio.get_device_info_by_index(i).get('name'))
+        dev_info = pdat.pyaudio.get_device_info_by_index(i)
+        print(f"Device {i}: {dev_info['name']} - {dev_info['hostApi']}")
 else:
     pdat.samplequeue = queue.Queue()
     pdat.preque = queue.Queue()
@@ -229,6 +230,7 @@ else:
     pdat.processor.start()
     pdat.rt.start()
 
+    # Select the correct ALSA device
     pdat.devrate = int(pdat.pyaudio.get_device_info_by_index(pdat.devindex).get('defaultSampleRate'))
     pdat.devstream = pdat.pyaudio.open(format=FORMAT,
                                        channels=CHANNELS,
