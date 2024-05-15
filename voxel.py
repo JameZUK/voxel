@@ -43,7 +43,7 @@ def noalsaerr():
 class StreamProcessor(threading.Thread):
     def __init__(self, pdat: VoxDat):
         threading.Thread.__init__(self)
-        self.setDaemon(True)
+        self.daemon = True
         self.pdat = pdat
         self.rt = self.pdat.rt
         self.wf = None
@@ -102,7 +102,7 @@ class RecordTimer(threading.Thread):
     def __init__(self, pdat: VoxDat):
         threading.Thread.__init__(self)
         self.pdat = pdat
-        self.setDaemon(True)
+        self.daemon = True
         self.timer = 0
         
     def run(self):
@@ -130,7 +130,7 @@ class KBListener(threading.Thread):
     def __init__(self, pdat: VoxDat):
         threading.Thread.__init__(self)
         self.pdat = pdat
-        self.setDaemon(True)
+        self.daemon = True
 
     def treset(self):
         termios.tcsetattr(self.pdat.ttyfd, termios.TCSADRAIN, self.pdat.ttysettings)
@@ -229,7 +229,13 @@ else:
     pdat.processor.start()
     pdat.rt.start()
 
-    pdat.devrate = int(pdat.pyaudio.get_device_info_by_index(pdat.devindex).get('defaultSampleRate'))
+    dev_info = pdat.pyaudio.get_device_info_by_index(pdat.devindex)
+    pdat.devrate = int(dev_info.get('defaultSampleRate'))
+    
+    if dev_info.get('maxInputChannels') < CHANNELS:
+        print(f"Error: The device does not support {CHANNELS} input channels")
+        sys.exit(1)
+    
     pdat.devstream = pdat.pyaudio.open(format=FORMAT,
                                        channels=CHANNELS,
                                        rate=pdat.devrate,
