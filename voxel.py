@@ -1,8 +1,5 @@
 #!/usr/bin/python3
 
-# Based on https://github.com/russinnes/py-vox-recorder/blob/master/py-corder-osx.py
-# apt-get install python3-pyaudio python3-numpy libasound2-dev
-
 import argparse
 from ctypes import *
 from contextlib import contextmanager
