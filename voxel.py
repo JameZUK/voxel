@@ -94,7 +94,7 @@ class StreamProcessor(threading.Thread):
         # Perform VAD on the audio data
         if self.vad is None:
             return True
-        return self.vad.is_speech(data.tobytes(), self.pdat.devrate)
+        return self.vad.is_speech(data, self.pdat.devrate)
 
     def process_audio_buffer(self):
         while len(self.audio_buffer) >= self.frame_length:
@@ -250,7 +250,7 @@ class KBListener(threading.Thread):
                 if self.pdat.processor.filter_timing == 'before':
                     self.pdat.processor.filter_timing = 'after'
                 else:
-                    self.pdat.processor.filter_timing = 'before'
+                    self.pdat.processor.filter_timing == 'before'
                 print(f"Filter timing: {self.pdat.processor.filter_timing}")
             elif ch == "V":
                 if self.pdat.processor.vad is None:
