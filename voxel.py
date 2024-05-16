@@ -36,13 +36,22 @@ def noalsaerr():
     asound.snd_lib_error_set_handler(None)
 
 class StreamProcessor(threading.Thread):
-    def __init__(self, pdat: VoxDat):
+    def __init__(self, pdat: VoxDat, normalize: bool):
         threading.Thread.__init__(self)
         self.daemon = True
         self.pdat = pdat
         self.rt = self.pdat.rt
         self.file = None
         self.filename = "No File"
+        self.normalize = normalize
+
+    def normalize_audio(self, data):
+        # Normalize the audio to have a maximum of 0.99 of the maximum possible value
+        peak = np.max(np.abs(data))
+        if peak > 0:
+            normalization_factor = (2**15 - 1) / peak * 0.99
+            data = np.int16(data * normalization_factor)
+        return data
         
     def run(self):
         while self.pdat.running:
@@ -57,6 +66,8 @@ class StreamProcessor(threading.Thread):
                 if self.pdat.current > self.pdat.threshold:
                     self.rt.reset_timer(time.time())
                 if self.pdat.recordflag:
+                    if self.normalize:
+                        data2 = self.normalize_audio(data2)
                     if not self.file:
                         self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
                         print("opening file " + self.filename + "\r")
@@ -67,10 +78,11 @@ class StreamProcessor(threading.Thread):
                                 try:
                                     data3 = self.pdat.preque.get_nowait()
                                     data3 = np.frombuffer(data3, dtype=np.int16)
+                                    if self.normalize:
+                                        data3 = self.normalize_audio(data3)
                                     self.file.write(data3)
                                 except queue.Empty:
                                     break
-                    data2 = np.frombuffer(data, dtype=np.int16)
                     self.file.write(data2)
                 else:
                     if self.pdat.rcnt == self.pdat.saverecs:
@@ -151,7 +163,7 @@ class KBListener(threading.Thread):
             ch = self.getch()
             if ch in ["h", "?"]:
                 print("h: help, f: show filename, k: show peak level, p: show peak")
-                print("q: quit, r: record on/off, v: set trigger level")
+                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization")
             elif ch == "k":
                 print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")  # Display peak with 2 decimal places
             elif ch == "v":
@@ -183,6 +195,10 @@ class KBListener(threading.Thread):
                     print("Recording enabled")
             elif ch == "p":
                 self.pdat.peakflag = not self.pdat.peakflag
+            elif ch == "n":
+                self.pdat.processor.normalize = not self.pdat.processor.normalize
+                state = "enabled" if self.pdat.processor.normalize else "disabled"
+                print(f"Normalization {state}")
             elif ch == "q":
                 print("Quitting...")
                 self.rstop()
@@ -197,6 +213,7 @@ parser.add_argument("-d", "--devno", type=int, default=2, help="Device number [2
 parser.add_argument("-s", "--saverecs", type=int, default=8, help="Records to buffer ahead of threshold [8]")
 parser.add_argument("-t", "--threshold", type=float, default=0.3, help="Minimum volume threshold (0.1-99) [0.3]")  # Adjusted default threshold to float
 parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
+parser.add_argument("-n", "--normalize", action="store_true", help="Normalize audio [False]")  # Added normalization option
 args = parser.parse_args()
 pdat = VoxDat()
 
@@ -220,7 +237,7 @@ else:
 
     pdat.running = True
     pdat.rt = RecordTimer(pdat)
-    pdat.processor = StreamProcessor(pdat)
+    pdat.processor = StreamProcessor(pdat, normalize=args.normalize)  # Pass normalize argument
     pdat.processor.start()
     pdat.rt.start()
 
@@ -251,7 +268,3 @@ else:
         time.sleep(1)
 
 print("Done.")
-
-
-                    
-
