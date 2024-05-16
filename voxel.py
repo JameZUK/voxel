@@ -16,8 +16,8 @@ from collections import deque
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-SAMPLE_RATE = 44100  # Ensure 48kHz sample rate
-FRAME_DURATION_MS = 10  # Use 20ms frames
+SAMPLE_RATE = 16000  # Change to 16kHz sample rate
+FRAME_DURATION_MS = 20  # Use 20ms frames
 FRAME_SIZE = int(SAMPLE_RATE * FRAME_DURATION_MS / 1000)  # Calculate frame size in samples
 FRAME_BYTES = FRAME_SIZE * 2  # 16-bit PCM, so 2 bytes per sample
 
@@ -337,7 +337,7 @@ else:
             print(f"Device {i}: {dev_info['name']} - Max Input Channels: {dev_info['maxInputChannels']} - Host API: {dev_info['hostApi']}")
         sys.exit(1)
     
-    pdat.devrate = SAMPLE_RATE  # Ensure the sample rate is set to 48kHz
+    pdat.devrate = SAMPLE_RATE  # Ensure the sample rate is set to 16kHz
     pdat.devstream = pdat.pyaudio.open(format=FORMAT,
                                        channels=CHANNELS,
                                        rate=pdat.devrate,
