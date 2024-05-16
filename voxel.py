@@ -10,6 +10,7 @@ import time
 import numpy as np
 import queue
 import soundfile as sf
+from scipy.signal import butter, lfilter, iirnotch
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
@@ -35,8 +36,37 @@ def noalsaerr():
     yield
     asound.snd_lib_error_set_handler(None)
 
+def butter_highpass(cutoff, fs, order=5):
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='high', analog=False)
+    return b, a
+
+def butter_lowpass(cutoff, fs, order=5):
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    return b, a
+
+def butter_highpass_filter(data, cutoff, fs, order=5):
+    b, a = butter_highpass(cutoff, fs, order=order)
+    y = lfilter(b, a, data)
+    return y
+
+def butter_lowpass_filter(data, cutoff, fs, order=5):
+    b, a = butter_lowpass(cutoff, fs, order=order)
+    y = lfilter(b, a, data)
+    return y
+
+def notch_filter(data, freq, fs, quality=30):
+    nyq = 0.5 * fs
+    norm_freq = freq / nyq
+    b, a = iirnotch(norm_freq, quality)
+    y = lfilter(b, a, data)
+    return y
+
 class StreamProcessor(threading.Thread):
-    def __init__(self, pdat: VoxDat, normalize: bool):
+    def __init__(self, pdat: VoxDat, normalize: bool, filter: bool, filter_timing: str):
         threading.Thread.__init__(self)
         self.daemon = True
         self.pdat = pdat
@@ -44,6 +74,8 @@ class StreamProcessor(threading.Thread):
         self.file = None
         self.filename = "No File"
         self.normalize = normalize
+        self.filter = filter
+        self.filter_timing = filter_timing
 
     def normalize_audio(self, data):
         # Normalize the audio to have a maximum of 0.99 of the maximum possible value
@@ -52,7 +84,15 @@ class StreamProcessor(threading.Thread):
             normalization_factor = (2**15 - 1) / peak * 0.99
             data = np.int16(data * normalization_factor)
         return data
-        
+    
+    def apply_filters(self, data):
+        # Apply high-pass, low-pass, and notch filters
+        data = butter_highpass_filter(data, cutoff=100, fs=self.pdat.devrate)  # High-pass filter at 100 Hz
+        data = butter_lowpass_filter(data, cutoff=3000, fs=self.pdat.devrate)  # Low-pass filter at 3000 Hz
+        data = notch_filter(data, freq=50, fs=self.pdat.devrate)  # Notch filter at 50 Hz (mains hum)
+        data = notch_filter(data, freq=60, fs=self.pdat.devrate)  # Notch filter at 60 Hz (mains hum)
+        return data
+
     def run(self):
         while self.pdat.running:
             data = self.pdat.samplequeue.get(1)
@@ -60,12 +100,16 @@ class StreamProcessor(threading.Thread):
                 time.sleep(0.1)
             else:
                 data2 = np.frombuffer(data, dtype=np.int16)
-                peak = np.max(np.abs(data2))  # Changed peak calculation
+                if self.filter and self.filter_timing == 'before':
+                    data2 = self.apply_filters(data2)
+                peak = np.max(np.abs(data2))  # Changed peak calculation to use filtered data if filtering is applied before
                 peak_normalized = (100 * peak) / 2**15  # Normalized peak calculation
                 self.pdat.current = peak_normalized  # Adjusted peak storage
                 if self.pdat.current > self.pdat.threshold:
                     self.rt.reset_timer(time.time())
                 if self.pdat.recordflag:
+                    if self.filter and self.filter_timing == 'after':
+                        data2 = self.apply_filters(data2)
                     if self.normalize:
                         data2 = self.normalize_audio(data2)
                     if not self.file:
@@ -78,6 +122,8 @@ class StreamProcessor(threading.Thread):
                                 try:
                                     data3 = self.pdat.preque.get_nowait()
                                     data3 = np.frombuffer(data3, dtype=np.int16)
+                                    if self.filter and self.filter_timing == 'after':
+                                        data3 = self.apply_filters(data3)
                                     if self.normalize:
                                         data3 = self.normalize_audio(data3)
                                     self.file.write(data3)
@@ -163,7 +209,7 @@ class KBListener(threading.Thread):
             ch = self.getch()
             if ch in ["h", "?"]:
                 print("h: help, f: show filename, k: show peak level, p: show peak")
-                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization")
+                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filter, T: toggle filter timing (before/after)")
             elif ch == "k":
                 print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")  # Display peak with 2 decimal places
             elif ch == "v":
@@ -199,6 +245,16 @@ class KBListener(threading.Thread):
                 self.pdat.processor.normalize = not self.pdat.processor.normalize
                 state = "enabled" if self.pdat.processor.normalize else "disabled"
                 print(f"Normalization {state}")
+            elif ch == "F":
+                self.pdat.processor.filter = not self.pdat.processor.filter
+                state = "enabled" if self.pdat.processor.filter else "disabled"
+                print(f"Filtering {state}")
+            elif ch == "T":
+                if self.pdat.processor.filter_timing == 'before':
+                    self.pdat.processor.filter_timing = 'after'
+                else:
+                    self.pdat.processor.filter_timing = 'before'
+                print(f"Filter timing: {self.pdat.processor.filter_timing}")
             elif ch == "q":
                 print("Quitting...")
                 self.rstop()
@@ -214,6 +270,8 @@ parser.add_argument("-s", "--saverecs", type=int, default=8, help="Records to bu
 parser.add_argument("-t", "--threshold", type=float, default=0.3, help="Minimum volume threshold (0.1-99) [0.3]")  # Adjusted default threshold to float
 parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
 parser.add_argument("-n", "--normalize", action="store_true", help="Normalize audio [False]")  # Added normalization option
+parser.add_argument("-F", "--filter", action="store_true", help="Apply filtering to audio [False]")  # Added filtering option
+parser.add_argument("--filter-timing", choices=['before', 'after'], default='before', help="When to apply filtering: before or after peak detection [before]")  # Added filter timing option
 args = parser.parse_args()
 pdat = VoxDat()
 
@@ -237,7 +295,7 @@ else:
 
     pdat.running = True
     pdat.rt = RecordTimer(pdat)
-    pdat.processor = StreamProcessor(pdat, normalize=args.normalize)  # Pass normalize argument
+    pdat.processor = StreamProcessor(pdat, normalize=args.normalize, filter=args.filter, filter_timing=args.filter_timing)  # Pass normalize, filter, and filter_timing arguments
     pdat.processor.start()
     pdat.rt.start()
 
