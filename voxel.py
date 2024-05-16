@@ -87,6 +87,10 @@ class StreamProcessor(threading.Thread):
         self.vad = webrtcvad.Vad(vad_mode) if vad_mode is not None else None
         self.audio_buffer = bytes()
 
+        # Validate the VAD frame length
+        if not webrtcvad.valid_rate_and_frame_length(SAMPLE_RATE, FRAME_SIZE):
+            raise ValueError("Invalid rate or frame length for VAD")
+
     def normalize_audio(self, data):
         # Normalize the audio to have a maximum of 0.99 of the maximum possible value
         peak = np.max(np.abs(data))
@@ -105,7 +109,11 @@ class StreamProcessor(threading.Thread):
         # Perform VAD on the audio data
         if self.vad is None:
             return True
-        return self.vad.is_speech(data, SAMPLE_RATE)
+        try:
+            return self.vad.is_speech(data, SAMPLE_RATE)
+        except webrtcvad.VadError as e:
+            print(f"VAD error: {e}")
+            return False
 
     def process_audio_buffer(self):
         for frame in frame_generator(self.audio_buffer, FRAME_BYTES):
@@ -261,7 +269,7 @@ class KBListener(threading.Thread):
                 if self.pdat.processor.filter_timing == 'before':
                     self.pdat.processor.filter_timing = 'after'
                 else:
-                    self.pdat.processor.filter_timing = 'before'
+                    self.pdat.processor.filter_timing == 'before'
                 print(f"Filter timing: {self.pdat.processor.filter_timing}")
             elif ch == "V":
                 if self.pdat.processor.vad is None:
