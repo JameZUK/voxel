@@ -14,14 +14,10 @@ from scipy.signal import butter, lfilter, iirnotch
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-SAMPLE_RATE = 16000  # Change to 16kHz sample rate
-FRAME_DURATION_MS = 20  # Use 20ms frames
-FRAME_SIZE = int(SAMPLE_RATE * FRAME_DURATION_MS / 1000)  # Calculate frame size in samples
-FRAME_BYTES = FRAME_SIZE * 2  # 16-bit PCM, so 2 bytes per sample
 
 class VoxDat:
     def __init__(self):
-        self.devindex = self.saverecs = self.hangdelay = self.chunk = self.devrate = self.current = self.rcnt = 0
+        self.devindex = self.threshold = self.saverecs = self.hangdelay = self.chunk = self.devrate = self.current = self.rcnt = 0
         self.recordflag = self.running = self.peakflag = False
         self.rt = self.km = self.ttysettings = self.ttyfd = self.pyaudio = self.devstream = self.processor = None
         self.preque = self.samplequeue = None
@@ -64,23 +60,17 @@ def apply_notch_filters(data, fs):
         data = notch_filter(data, freq, fs)
     return data
 
-def frame_generator(buffer, frame_bytes):
-    offset = 0
-    while offset + frame_bytes <= len(buffer):
-        frame = buffer[offset:offset + frame_bytes]
-        offset += frame_bytes
-        yield frame
-
 class StreamProcessor(threading.Thread):
-    def __init__(self, pdat: VoxDat, normalize: bool, filter: bool):
+    def __init__(self, pdat: VoxDat, normalize: bool, filter: bool, filter_timing: str):
         threading.Thread.__init__(self)
         self.daemon = True
         self.pdat = pdat
+        self.rt = self.pdat.rt
         self.file = None
         self.filename = "No File"
         self.normalize = normalize
         self.filter = filter
-        self.audio_buffer = bytes()
+        self.filter_timing = filter_timing
 
     def normalize_audio(self, data):
         # Normalize the audio to have a maximum of 0.99 of the maximum possible value
@@ -96,40 +86,49 @@ class StreamProcessor(threading.Thread):
         data = apply_notch_filters(data, fs=self.pdat.devrate)  # Notch filters
         return data
 
-    def process_audio_buffer(self):
-        for frame in frame_generator(self.audio_buffer, FRAME_BYTES):
-            if self.filter:
-                frame = self.apply_filters(np.frombuffer(frame, dtype=np.int16)).tobytes()
-            if self.recordflag:
-                if self.normalize:
-                    frame = self.normalize_audio(np.frombuffer(frame, dtype=np.int16)).tobytes()
-                if not self.file:
-                    self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
-                    print("opening file " + self.filename + "\r")
-                    self.file = sf.SoundFile(self.filename, mode='w', samplerate=SAMPLE_RATE, channels=CHANNELS, format='FLAC')
-                self.file.write(np.frombuffer(frame, dtype=np.int16))
-            else:
-                if self.pdat.rcnt == self.pdat.saverecs:
-                    self.pdat.preque.get_nowait()
-                else:
-                    self.pdat.rcnt += 1
-                self.pdat.preque.put(frame)
-            peak = np.max(np.abs(np.frombuffer(frame, dtype=np.int16)))  # Peak calculation
-            peak_normalized = (100 * peak) / 2**15  # Normalized peak calculation
-            self.pdat.current = peak_normalized  # Adjusted peak storage
-            if self.pdat.current > self.pdat.threshold:
-                self.rt.reset_timer(time.time())
-        # Keep remaining bytes in the buffer
-        self.audio_buffer = self.audio_buffer[len(self.audio_buffer) - (len(self.audio_buffer) % FRAME_BYTES):]
-
     def run(self):
         while self.pdat.running:
             data = self.pdat.samplequeue.get(1)
             if data is None:
                 time.sleep(0.1)
             else:
-                self.audio_buffer += data
-                self.process_audio_buffer()
+                data2 = np.frombuffer(data, dtype=np.int16)
+                if self.filter and self.filter_timing == 'before':
+                    data2 = self.apply_filters(data2)
+                peak = np.max(np.abs(data2))  # Changed peak calculation to use filtered data if filtering is applied before
+                peak_normalized = (100 * peak) / 2**15  # Normalized peak calculation
+                self.pdat.current = peak_normalized  # Adjusted peak storage
+                if self.pdat.current > self.pdat.threshold:
+                    self.rt.reset_timer(time.time())
+                if self.pdat.recordflag:
+                    if self.filter and self.filter_timing == 'after':
+                        data2 = self.apply_filters(data2)
+                    if self.normalize:
+                        data2 = self.normalize_audio(data2)
+                    if not self.file:
+                        self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
+                        print("opening file " + self.filename + "\r")
+                        self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
+                        if self.pdat.rcnt != 0:
+                            self.pdat.rcnt = 0
+                            while True:
+                                try:
+                                    data3 = self.pdat.preque.get_nowait()
+                                    data3 = np.frombuffer(data3, dtype=np.int16)
+                                    if self.filter and self.filter_timing == 'after':
+                                        data3 = self.apply_filters(data3)
+                                    if self.normalize:
+                                        data3 = self.normalize_audio(data3)
+                                    self.file.write(data3)
+                                except queue.Empty:
+                                    break
+                    self.file.write(data2)
+                else:
+                    if self.pdat.rcnt == self.pdat.saverecs:
+                        self.pdat.preque.get_nowait()
+                    else:
+                        self.pdat.rcnt += 1
+                    self.pdat.preque.put(data)
              
     def ReadCallback(self, indata, framecount, timeinfo, status):
         self.pdat.samplequeue.put(indata)
@@ -203,7 +202,7 @@ class KBListener(threading.Thread):
             ch = self.getch()
             if ch in ["h", "?"]:
                 print("h: help, f: show filename, k: show peak level, p: show peak")
-                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filter")
+                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filter, T: toggle filter timing (before/after)")
             elif ch == "k":
                 print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")  # Display peak with 2 decimal places
             elif ch == "v":
@@ -243,6 +242,12 @@ class KBListener(threading.Thread):
                 self.pdat.processor.filter = not self.pdat.processor.filter
                 state = "enabled" if self.pdat.processor.filter else "disabled"
                 print(f"Filtering {state}")
+            elif ch == "T":
+                if self.pdat.processor.filter_timing == 'before':
+                    self.pdat.processor.filter_timing = 'after'
+                else:
+                    self.pdat.processor.filter_timing = 'before'
+                print(f"Filter timing: {self.pdat.processor.filter_timing}")
             elif ch == "q":
                 print("Quitting...")
                 self.rstop()
@@ -259,6 +264,7 @@ parser.add_argument("-t", "--threshold", type=float, default=0.3, help="Minimum 
 parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
 parser.add_argument("-n", "--normalize", action="store_true", help="Normalize audio [False]")  # Added normalization option
 parser.add_argument("-F", "--filter", action="store_true", help="Apply filtering to audio [False]")  # Added filtering option
+parser.add_argument("--filter-timing", choices=['before', 'after'], default='before', help="When to apply filtering: before or after peak detection [before]")  # Added filter timing option
 args = parser.parse_args()
 pdat = VoxDat()
 
@@ -282,7 +288,7 @@ else:
 
     pdat.running = True
     pdat.rt = RecordTimer(pdat)
-    pdat.processor = StreamProcessor(pdat, normalize=args.normalize, filter=args.filter)  # Pass normalize and filter arguments
+    pdat.processor = StreamProcessor(pdat, normalize=args.normalize, filter=args.filter, filter_timing=args.filter_timing)  # Pass normalize, filter, and filter_timing arguments
     pdat.processor.start()
     pdat.rt.start()
 
@@ -296,7 +302,7 @@ else:
             print(f"Device {i}: {dev_info['name']} - Max Input Channels: {dev_info['maxInputChannels']} - Host API: {dev_info['hostApi']}")
         sys.exit(1)
     
-    pdat.devrate = SAMPLE_RATE  # Ensure the sample rate is set to 16kHz
+    pdat.devrate = int(dev_info.get('defaultSampleRate'))
     pdat.devstream = pdat.pyaudio.open(format=FORMAT,
                                        channels=CHANNELS,
                                        rate=pdat.devrate,
