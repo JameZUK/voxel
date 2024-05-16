@@ -74,6 +74,8 @@ class StreamProcessor(threading.Thread):
         self.filter_timing = filter_timing
         self.vad = webrtcvad.Vad(vad_mode) if vad_mode is not None else None
         self.audio_buffer = bytes()
+        self.frame_length_ms = 30  # Use 30ms frames for VAD
+        self.frame_length = int(self.pdat.devrate * self.frame_length_ms / 1000) * 2  # Calculate frame length in bytes
 
     def normalize_audio(self, data):
         # Normalize the audio to have a maximum of 0.99 of the maximum possible value
@@ -96,11 +98,9 @@ class StreamProcessor(threading.Thread):
         return self.vad.is_speech(data, self.pdat.devrate)
 
     def process_audio_buffer(self):
-        frame_length_ms = 30  # Use 30ms frames for VAD
-        frame_length = int(self.pdat.devrate * frame_length_ms / 1000) * 2  # Calculate frame length in bytes
-        while len(self.audio_buffer) >= frame_length:
-            frame = self.audio_buffer[:frame_length]
-            self.audio_buffer = self.audio_buffer[frame_length:]
+        while len(self.audio_buffer) >= self.frame_length:
+            frame = self.audio_buffer[:self.frame_length]
+            self.audio_buffer = self.audio_buffer[self.frame_length:]
             if self.filter and self.filter_timing == 'before':
                 frame = self.apply_filters(np.frombuffer(frame, dtype=np.int16)).tobytes()
             if self.is_speech(frame):
