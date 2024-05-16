@@ -11,8 +11,6 @@ import numpy as np
 import queue
 import soundfile as sf
 from scipy.signal import butter, lfilter, iirnotch
-import webrtcvad
-from collections import deque
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
@@ -23,7 +21,7 @@ FRAME_BYTES = FRAME_SIZE * 2  # 16-bit PCM, so 2 bytes per sample
 
 class VoxDat:
     def __init__(self):
-        self.devindex = self.threshold = self.saverecs = self.hangdelay = self.chunk = self.devrate = self.current = self.rcnt = 0
+        self.devindex = self.saverecs = self.hangdelay = self.chunk = self.devrate = self.current = self.rcnt = 0
         self.recordflag = self.running = self.peakflag = False
         self.rt = self.km = self.ttysettings = self.ttyfd = self.pyaudio = self.devstream = self.processor = None
         self.preque = self.samplequeue = None
@@ -74,25 +72,15 @@ def frame_generator(buffer, frame_bytes):
         yield frame
 
 class StreamProcessor(threading.Thread):
-    def __init__(self, pdat: VoxDat, normalize: bool, filter: bool, filter_timing: str, vad_mode: int):
+    def __init__(self, pdat: VoxDat, normalize: bool, filter: bool):
         threading.Thread.__init__(self)
         self.daemon = True
         self.pdat = pdat
-        self.rt = self.pdat.rt
         self.file = None
         self.filename = "No File"
         self.normalize = normalize
         self.filter = filter
-        self.filter_timing = filter_timing
-        self.vad = webrtcvad.Vad(vad_mode) if vad_mode is not None else None
         self.audio_buffer = bytes()
-
-        # Validate the VAD frame length
-        print(f"Validating VAD with SAMPLE_RATE: {SAMPLE_RATE}, FRAME_DURATION_MS: {FRAME_DURATION_MS}")
-        if not webrtcvad.valid_rate_and_frame_length(SAMPLE_RATE, FRAME_DURATION_MS):
-            print(f"Invalid rate or frame length for VAD: SAMPLE_RATE={SAMPLE_RATE}, FRAME_DURATION_MS={FRAME_DURATION_MS}")
-            raise ValueError("Invalid rate or frame length for VAD")
-        print("Validation successful for VAD")
 
     def normalize_audio(self, data):
         # Normalize the audio to have a maximum of 0.99 of the maximum possible value
@@ -108,42 +96,29 @@ class StreamProcessor(threading.Thread):
         data = apply_notch_filters(data, fs=self.pdat.devrate)  # Notch filters
         return data
 
-    def is_speech(self, data):
-        # Perform VAD on the audio data
-        if self.vad is None:
-            return True
-        try:
-            return self.vad.is_speech(data, SAMPLE_RATE)
-        except webrtcvad.Error as e:
-            print(f"VAD error: {e}")
-            return False
-
     def process_audio_buffer(self):
         for frame in frame_generator(self.audio_buffer, FRAME_BYTES):
-            if self.filter and self.filter_timing == 'before':
+            if self.filter:
                 frame = self.apply_filters(np.frombuffer(frame, dtype=np.int16)).tobytes()
-            if self.is_speech(frame):
-                if self.recordflag:
-                    if self.filter and self.filter_timing == 'after':
-                        frame = self.apply_filters(np.frombuffer(frame, dtype=np.int16)).tobytes()
-                    if self.normalize:
-                        frame = self.normalize_audio(np.frombuffer(frame, dtype=np.int16)).tobytes()
-                    if not self.file:
-                        self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
-                        print("opening file " + self.filename + "\r")
-                        self.file = sf.SoundFile(self.filename, mode='w', samplerate=SAMPLE_RATE, channels=CHANNELS, format='FLAC')
-                    self.file.write(np.frombuffer(frame, dtype=np.int16))
+            if self.recordflag:
+                if self.normalize:
+                    frame = self.normalize_audio(np.frombuffer(frame, dtype=np.int16)).tobytes()
+                if not self.file:
+                    self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
+                    print("opening file " + self.filename + "\r")
+                    self.file = sf.SoundFile(self.filename, mode='w', samplerate=SAMPLE_RATE, channels=CHANNELS, format='FLAC')
+                self.file.write(np.frombuffer(frame, dtype=np.int16))
+            else:
+                if self.pdat.rcnt == self.pdat.saverecs:
+                    self.pdat.preque.get_nowait()
                 else:
-                    if self.pdat.rcnt == self.pdat.saverecs:
-                        self.pdat.preque.get_nowait()
-                    else:
-                        self.pdat.rcnt += 1
-                    self.pdat.preque.put(frame)
-                peak = np.max(np.abs(np.frombuffer(frame, dtype=np.int16)))  # Peak calculation
-                peak_normalized = (100 * peak) / 2**15  # Normalized peak calculation
-                self.pdat.current = peak_normalized  # Adjusted peak storage
-                if self.pdat.current > self.pdat.threshold:
-                    self.rt.reset_timer(time.time())
+                    self.pdat.rcnt += 1
+                self.pdat.preque.put(frame)
+            peak = np.max(np.abs(np.frombuffer(frame, dtype=np.int16)))  # Peak calculation
+            peak_normalized = (100 * peak) / 2**15  # Normalized peak calculation
+            self.pdat.current = peak_normalized  # Adjusted peak storage
+            if self.pdat.current > self.pdat.threshold:
+                self.rt.reset_timer(time.time())
         # Keep remaining bytes in the buffer
         self.audio_buffer = self.audio_buffer[len(self.audio_buffer) - (len(self.audio_buffer) % FRAME_BYTES):]
 
@@ -228,7 +203,7 @@ class KBListener(threading.Thread):
             ch = self.getch()
             if ch in ["h", "?"]:
                 print("h: help, f: show filename, k: show peak level, p: show peak")
-                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filter, T: toggle filter timing (before/after), V: toggle VAD")
+                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filter")
             elif ch == "k":
                 print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")  # Display peak with 2 decimal places
             elif ch == "v":
@@ -268,20 +243,6 @@ class KBListener(threading.Thread):
                 self.pdat.processor.filter = not self.pdat.processor.filter
                 state = "enabled" if self.pdat.processor.filter else "disabled"
                 print(f"Filtering {state}")
-            elif ch == "T":
-                if self.pdat.processor.filter_timing == 'before':
-                    self.pdat.processor.filter_timing = 'after'
-                else:
-                    self.pdat.processor.filter_timing = 'before'
-                print(f"Filter timing: {self.pdat.processor.filter_timing}")
-            elif ch == "V":
-                if self.pdat.processor.vad is None:
-                    vad_mode = int(input("Enter VAD mode (0-3): "))
-                    self.pdat.processor.vad = webrtcvad.Vad(vad_mode)
-                else:
-                    self.pdat.processor.vad = None
-                state = "enabled" if self.pdat.processor.vad is not None else "disabled"
-                print(f"VAD {state}")
             elif ch == "q":
                 print("Quitting...")
                 self.rstop()
@@ -298,8 +259,6 @@ parser.add_argument("-t", "--threshold", type=float, default=0.3, help="Minimum 
 parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
 parser.add_argument("-n", "--normalize", action="store_true", help="Normalize audio [False]")  # Added normalization option
 parser.add_argument("-F", "--filter", action="store_true", help="Apply filtering to audio [False]")  # Added filtering option
-parser.add_argument("--filter-timing", choices=['before', 'after'], default='before', help="When to apply filtering: before or after peak detection [before]")  # Added filter timing option
-parser.add_argument("--vad-mode", type=int, choices=[0, 1, 2, 3], help="Set VAD sensitivity (0-3) [None]")  # Added VAD mode option
 args = parser.parse_args()
 pdat = VoxDat()
 
@@ -323,7 +282,7 @@ else:
 
     pdat.running = True
     pdat.rt = RecordTimer(pdat)
-    pdat.processor = StreamProcessor(pdat, normalize=args.normalize, filter=args.filter, filter_timing=args.filter_timing, vad_mode=args.vad_mode)  # Pass normalize, filter, filter_timing, and vad_mode arguments
+    pdat.processor = StreamProcessor(pdat, normalize=args.normalize, filter=args.filter)  # Pass normalize and filter arguments
     pdat.processor.start()
     pdat.rt.start()
 
