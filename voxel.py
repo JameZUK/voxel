@@ -36,25 +36,15 @@ def noalsaerr():
     yield
     asound.snd_lib_error_set_handler(None)
 
-def butter_highpass(cutoff, fs, order=5):
+def butter_bandpass(lowcut, highcut, fs, order=5):
     nyq = 0.5 * fs
-    normal_cutoff = cutoff / nyq
-    b, a = butter(order, normal_cutoff, btype='high', analog=False)
+    low = lowcut / nyq
+    high = highcut / nyq
+    b, a = butter(order, [low, high], btype='band')
     return b, a
 
-def butter_lowpass(cutoff, fs, order=5):
-    nyq = 0.5 * fs
-    normal_cutoff = cutoff / nyq
-    b, a = butter(order, normal_cutoff, btype='low', analog=False)
-    return b, a
-
-def butter_highpass_filter(data, cutoff, fs, order=5):
-    b, a = butter_highpass(cutoff, fs, order=order)
-    y = lfilter(b, a, data)
-    return y
-
-def butter_lowpass_filter(data, cutoff, fs, order=5):
-    b, a = butter_lowpass(cutoff, fs, order=order)
+def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
+    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
     y = lfilter(b, a, data)
     return y
 
@@ -64,6 +54,11 @@ def notch_filter(data, freq, fs, quality=30):
     b, a = iirnotch(norm_freq, quality)
     y = lfilter(b, a, data)
     return y
+
+def apply_notch_filters(data, fs):
+    for freq in [50, 100, 150, 60, 120, 180]:
+        data = notch_filter(data, freq, fs)
+    return data
 
 class StreamProcessor(threading.Thread):
     def __init__(self, pdat: VoxDat, normalize: bool, filter: bool, filter_timing: str):
@@ -86,11 +81,9 @@ class StreamProcessor(threading.Thread):
         return data
     
     def apply_filters(self, data):
-        # Apply high-pass, low-pass, and notch filters
-        data = butter_highpass_filter(data, cutoff=100, fs=self.pdat.devrate)  # High-pass filter at 100 Hz
-        data = butter_lowpass_filter(data, cutoff=3000, fs=self.pdat.devrate)  # Low-pass filter at 3000 Hz
-        data = notch_filter(data, freq=50, fs=self.pdat.devrate)  # Notch filter at 50 Hz (mains hum)
-        data = notch_filter(data, freq=60, fs=self.pdat.devrate)  # Notch filter at 60 Hz (mains hum)
+        # Apply bandpass filter and notch filters
+        data = butter_bandpass_filter(data, lowcut=300, highcut=3400, fs=self.pdat.devrate)  # Bandpass filter
+        data = apply_notch_filters(data, fs=self.pdat.devrate)  # Notch filters
         return data
 
     def run(self):
