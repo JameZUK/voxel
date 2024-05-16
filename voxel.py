@@ -74,7 +74,7 @@ class StreamProcessor(threading.Thread):
         self.filter_timing = filter_timing
         self.vad = webrtcvad.Vad(vad_mode) if vad_mode is not None else None
         self.audio_buffer = bytes()
-        self.frame_length = int(0.03 * self.pdat.devrate * 2)  # 30ms frames
+        self.frame_length = int(0.02 * self.pdat.devrate * 2)  # 20ms frames
 
     def normalize_audio(self, data):
         # Normalize the audio to have a maximum of 0.99 of the maximum possible value
