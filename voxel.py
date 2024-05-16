@@ -94,7 +94,7 @@ class StreamProcessor(threading.Thread):
         # Perform VAD on the audio data
         if self.vad is None:
             return True
-        return self.vad.is_speech(data, self.pdat.devrate)
+        return self.vad.is_speech(data.tobytes(), self.pdat.devrate)
 
     def process_audio_buffer(self):
         while len(self.audio_buffer) >= self.frame_length:
