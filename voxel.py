@@ -73,6 +73,7 @@ class StreamProcessor(threading.Thread):
         self.filter = filter
         self.filter_timing = filter_timing
         self.vad = webrtcvad.Vad(vad_mode) if vad_mode is not None else None
+        self.audio_buffer = bytes()
 
     def normalize_audio(self, data):
         # Normalize the audio to have a maximum of 0.99 of the maximum possible value
@@ -92,7 +93,40 @@ class StreamProcessor(threading.Thread):
         # Perform VAD on the audio data
         if self.vad is None:
             return True
-        return self.vad.is_speech(data.tobytes(), self.pdat.devrate)
+        return self.vad.is_speech(data, self.pdat.devrate)
+
+    def process_audio_buffer(self):
+        frame_length_ms = 30  # Use 30ms frames for VAD
+        frame_length = int(self.pdat.devrate * frame_length_ms / 1000) * 2  # Calculate frame length in bytes
+        while len(self.audio_buffer) >= frame_length:
+            frame = self.audio_buffer[:frame_length]
+            self.audio_buffer = self.audio_buffer[frame_length:]
+            if self.filter and self.filter_timing == 'before':
+                frame = self.apply_filters(np.frombuffer(frame, dtype=np.int16)).tobytes()
+            if self.is_speech(frame):
+                if self.recordflag:
+                    if self.filter and self.filter_timing == 'after':
+                        frame = self.apply_filters(np.frombuffer(frame, dtype=np.int16)).tobytes()
+                    if self.normalize:
+                        frame = self.normalize_audio(np.frombuffer(frame, dtype=np.int16)).tobytes()
+                    if not self.file:
+                        self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
+                        print("opening file " + self.filename + "\r")
+                        self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
+                    self.file.write(np.frombuffer(frame, dtype=np.int16))
+                else:
+                    if self.pdat.rcnt == self.pdat.saverecs:
+                        self.pdat.preque.get_nowait()
+                    else:
+                        self.pdat.rcnt += 1
+                    self.pdat.preque.put(frame)
+                peak = np.max(np.abs(np.frombuffer(frame, dtype=np.int16)))  # Peak calculation
+                peak_normalized = (100 * peak) / 2**15  # Normalized peak calculation
+                self.pdat.current = peak_normalized  # Adjusted peak storage
+                if self.pdat.current > self.pdat.threshold:
+                    self.rt.reset_timer(time.time())
+            else:
+                time.sleep(0.1)
 
     def run(self):
         while self.pdat.running:
@@ -100,45 +134,8 @@ class StreamProcessor(threading.Thread):
             if data is None:
                 time.sleep(0.1)
             else:
-                data2 = np.frombuffer(data, dtype=np.int16)
-                if self.filter and self.filter_timing == 'before':
-                    data2 = self.apply_filters(data2)
-                if self.vad and not self.is_speech(data2):
-                    continue
-                peak = np.max(np.abs(data2))  # Peak calculation to use filtered data if filtering is applied before
-                peak_normalized = (100 * peak) / 2**15  # Normalized peak calculation
-                self.pdat.current = peak_normalized  # Adjusted peak storage
-                if self.pdat.current > self.pdat.threshold:
-                    self.rt.reset_timer(time.time())
-                if self.pdat.recordflag:
-                    if self.filter and self.filter_timing == 'after':
-                        data2 = self.apply_filters(data2)
-                    if self.normalize:
-                        data2 = self.normalize_audio(data2)
-                    if not self.file:
-                        self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
-                        print("opening file " + self.filename + "\r")
-                        self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
-                        if self.pdat.rcnt != 0:
-                            self.pdat.rcnt = 0
-                            while True:
-                                try:
-                                    data3 = self.pdat.preque.get_nowait()
-                                    data3 = np.frombuffer(data3, dtype=np.int16)
-                                    if self.filter and self.filter_timing == 'after':
-                                        data3 = self.apply_filters(data3)
-                                    if self.normalize:
-                                        data3 = self.normalize_audio(data3)
-                                    self.file.write(data3)
-                                except queue.Empty:
-                                    break
-                    self.file.write(data2)
-                else:
-                    if self.pdat.rcnt == self.pdat.saverecs:
-                        self.pdat.preque.get_nowait()
-                    else:
-                        self.pdat.rcnt += 1
-                    self.pdat.preque.put(data)
+                self.audio_buffer += data
+                self.process_audio_buffer()
              
     def ReadCallback(self, indata, framecount, timeinfo, status):
         self.pdat.samplequeue.put(indata)
