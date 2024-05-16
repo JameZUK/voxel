@@ -12,12 +12,14 @@ import queue
 import soundfile as sf
 from scipy.signal import butter, lfilter, iirnotch
 import webrtcvad
+from collections import deque
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 SAMPLE_RATE = 48000  # Ensure 48kHz sample rate
 FRAME_DURATION_MS = 30  # Use 30ms frames
-FRAME_SIZE = int(SAMPLE_RATE * FRAME_DURATION_MS / 1000) * 2  # Calculate frame size in bytes (16-bit PCM)
+FRAME_SIZE = int(SAMPLE_RATE * FRAME_DURATION_MS / 1000)  # Calculate frame size in samples
+FRAME_BYTES = FRAME_SIZE * 2  # 16-bit PCM, so 2 bytes per sample
 
 class VoxDat:
     def __init__(self):
@@ -64,6 +66,13 @@ def apply_notch_filters(data, fs):
         data = notch_filter(data, freq, fs)
     return data
 
+def frame_generator(buffer, frame_bytes):
+    offset = 0
+    while offset + frame_bytes <= len(buffer):
+        frame = buffer[offset:offset + frame_bytes]
+        offset += frame_bytes
+        yield frame
+
 class StreamProcessor(threading.Thread):
     def __init__(self, pdat: VoxDat, normalize: bool, filter: bool, filter_timing: str, vad_mode: int):
         threading.Thread.__init__(self)
@@ -99,9 +108,7 @@ class StreamProcessor(threading.Thread):
         return self.vad.is_speech(data, SAMPLE_RATE)
 
     def process_audio_buffer(self):
-        while len(self.audio_buffer) >= FRAME_SIZE:
-            frame = self.audio_buffer[:FRAME_SIZE]
-            self.audio_buffer = self.audio_buffer[FRAME_SIZE:]
+        for frame in frame_generator(self.audio_buffer, FRAME_BYTES):
             if self.filter and self.filter_timing == 'before':
                 frame = self.apply_filters(np.frombuffer(frame, dtype=np.int16)).tobytes()
             if self.is_speech(frame):
@@ -126,6 +133,8 @@ class StreamProcessor(threading.Thread):
                 self.pdat.current = peak_normalized  # Adjusted peak storage
                 if self.pdat.current > self.pdat.threshold:
                     self.rt.reset_timer(time.time())
+        # Keep remaining bytes in the buffer
+        self.audio_buffer = self.audio_buffer[len(self.audio_buffer) - (len(self.audio_buffer) % FRAME_BYTES):]
 
     def run(self):
         while self.pdat.running:
@@ -252,7 +261,7 @@ class KBListener(threading.Thread):
                 if self.pdat.processor.filter_timing == 'before':
                     self.pdat.processor.filter_timing = 'after'
                 else:
-                    self.pdat.processor.filter_timing == 'before'
+                    self.pdat.processor.filter_timing = 'before'
                 print(f"Filter timing: {self.pdat.processor.filter_timing}")
             elif ch == "V":
                 if self.pdat.processor.vad is None:
@@ -334,4 +343,3 @@ else:
         time.sleep(1)
 
 print("Done.")
-
