@@ -17,7 +17,7 @@ from collections import deque
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 SAMPLE_RATE = 48000  # Ensure 48kHz sample rate
-FRAME_DURATION_MS = 20  # Use 20ms frames
+FRAME_DURATION_MS = 10  # Use 20ms frames
 FRAME_SIZE = int(SAMPLE_RATE * FRAME_DURATION_MS / 1000)  # Calculate frame size in samples
 FRAME_BYTES = FRAME_SIZE * 2  # 16-bit PCM, so 2 bytes per sample
 
