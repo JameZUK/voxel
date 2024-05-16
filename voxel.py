@@ -88,8 +88,11 @@ class StreamProcessor(threading.Thread):
         self.audio_buffer = bytes()
 
         # Validate the VAD frame length
+        print(f"Validating VAD with SAMPLE_RATE: {SAMPLE_RATE}, FRAME_DURATION_MS: {FRAME_DURATION_MS}")
         if not webrtcvad.valid_rate_and_frame_length(SAMPLE_RATE, FRAME_DURATION_MS):
+            print(f"Invalid rate or frame length for VAD: SAMPLE_RATE={SAMPLE_RATE}, FRAME_DURATION_MS={FRAME_DURATION_MS}")
             raise ValueError("Invalid rate or frame length for VAD")
+        print("Validation successful for VAD")
 
     def normalize_audio(self, data):
         # Normalize the audio to have a maximum of 0.99 of the maximum possible value
