@@ -15,6 +15,9 @@ import webrtcvad
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
+SAMPLE_RATE = 48000  # Ensure 48kHz sample rate
+FRAME_DURATION_MS = 30  # Use 30ms frames
+FRAME_SIZE = int(SAMPLE_RATE * FRAME_DURATION_MS / 1000) * 2  # Calculate frame size in bytes (16-bit PCM)
 
 class VoxDat:
     def __init__(self):
@@ -74,7 +77,6 @@ class StreamProcessor(threading.Thread):
         self.filter_timing = filter_timing
         self.vad = webrtcvad.Vad(vad_mode) if vad_mode is not None else None
         self.audio_buffer = bytes()
-        self.frame_length = int(0.02 * self.pdat.devrate * 2)  # 20ms frames
 
     def normalize_audio(self, data):
         # Normalize the audio to have a maximum of 0.99 of the maximum possible value
@@ -94,12 +96,12 @@ class StreamProcessor(threading.Thread):
         # Perform VAD on the audio data
         if self.vad is None:
             return True
-        return self.vad.is_speech(data, self.pdat.devrate)
+        return self.vad.is_speech(data, SAMPLE_RATE)
 
     def process_audio_buffer(self):
-        while len(self.audio_buffer) >= self.frame_length:
-            frame = self.audio_buffer[:self.frame_length]
-            self.audio_buffer = self.audio_buffer[self.frame_length:]
+        while len(self.audio_buffer) >= FRAME_SIZE:
+            frame = self.audio_buffer[:FRAME_SIZE]
+            self.audio_buffer = self.audio_buffer[FRAME_SIZE:]
             if self.filter and self.filter_timing == 'before':
                 frame = self.apply_filters(np.frombuffer(frame, dtype=np.int16)).tobytes()
             if self.is_speech(frame):
@@ -111,7 +113,7 @@ class StreamProcessor(threading.Thread):
                     if not self.file:
                         self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
                         print("opening file " + self.filename + "\r")
-                        self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
+                        self.file = sf.SoundFile(self.filename, mode='w', samplerate=SAMPLE_RATE, channels=CHANNELS, format='FLAC')
                     self.file.write(np.frombuffer(frame, dtype=np.int16))
                 else:
                     if self.pdat.rcnt == self.pdat.saverecs:
@@ -315,7 +317,7 @@ else:
             print(f"Device {i}: {dev_info['name']} - Max Input Channels: {dev_info['maxInputChannels']} - Host API: {dev_info['hostApi']}")
         sys.exit(1)
     
-    pdat.devrate = int(dev_info.get('defaultSampleRate'))
+    pdat.devrate = SAMPLE_RATE  # Ensure the sample rate is set to 48kHz
     pdat.devstream = pdat.pyaudio.open(format=FORMAT,
                                        channels=CHANNELS,
                                        rate=pdat.devrate,
