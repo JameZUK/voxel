@@ -88,7 +88,7 @@ class StreamProcessor(threading.Thread):
         self.audio_buffer = bytes()
 
         # Validate the VAD frame length
-        if not webrtcvad.valid_rate_and_frame_length(SAMPLE_RATE, FRAME_SIZE):
+        if not webrtcvad.valid_rate_and_frame_length(SAMPLE_RATE, FRAME_DURATION_MS):
             raise ValueError("Invalid rate or frame length for VAD")
 
     def normalize_audio(self, data):
@@ -111,7 +111,7 @@ class StreamProcessor(threading.Thread):
             return True
         try:
             return self.vad.is_speech(data, SAMPLE_RATE)
-        except webrtcvad.VadError as e:
+        except webrtcvad.Error as e:
             print(f"VAD error: {e}")
             return False
 
@@ -269,7 +269,7 @@ class KBListener(threading.Thread):
                 if self.pdat.processor.filter_timing == 'before':
                     self.pdat.processor.filter_timing = 'after'
                 else:
-                    self.pdat.processor.filter_timing == 'before'
+                    self.pdat.processor.filter_timing = 'before'
                 print(f"Filter timing: {self.pdat.processor.filter_timing}")
             elif ch == "V":
                 if self.pdat.processor.vad is None:
