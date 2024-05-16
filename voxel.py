@@ -11,9 +11,11 @@ import numpy as np
 import queue
 import soundfile as sf
 from scipy.signal import butter, lfilter, iirnotch
+import webrtcvad
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
+VAD_MODE = 3  # Aggressiveness mode of the VAD (0-3). Higher values are more aggressive.
 
 class VoxDat:
     def __init__(self):
@@ -61,7 +63,7 @@ def apply_notch_filters(data, fs):
     return data
 
 class StreamProcessor(threading.Thread):
-    def __init__(self, pdat: VoxDat, normalize: bool, filter: bool, filter_timing: str):
+    def __init__(self, pdat: VoxDat, normalize: bool, filter: bool, filter_timing: str, use_vad: bool):
         threading.Thread.__init__(self)
         self.daemon = True
         self.pdat = pdat
@@ -71,6 +73,8 @@ class StreamProcessor(threading.Thread):
         self.normalize = normalize
         self.filter = filter
         self.filter_timing = filter_timing
+        self.use_vad = use_vad
+        self.vad = webrtcvad.Vad(VAD_MODE) if use_vad else None
 
     def normalize_audio(self, data):
         # Normalize the audio to have a maximum of 0.99 of the maximum possible value
@@ -86,6 +90,12 @@ class StreamProcessor(threading.Thread):
         data = apply_notch_filters(data, fs=self.pdat.devrate)  # Notch filters
         return data
 
+    def is_speech(self, data):
+        # Perform VAD on the audio data
+        if self.vad is None:
+            return True
+        return self.vad.is_speech(data.tobytes(), self.pdat.devrate)
+
     def run(self):
         while self.pdat.running:
             data = self.pdat.samplequeue.get(1)
@@ -95,7 +105,9 @@ class StreamProcessor(threading.Thread):
                 data2 = np.frombuffer(data, dtype=np.int16)
                 if self.filter and self.filter_timing == 'before':
                     data2 = self.apply_filters(data2)
-                peak = np.max(np.abs(data2))  # Changed peak calculation to use filtered data if filtering is applied before
+                if self.use_vad and not self.is_speech(data2):
+                    continue
+                peak = np.max(np.abs(data2))  # Peak calculation to use filtered data if filtering is applied before
                 peak_normalized = (100 * peak) / 2**15  # Normalized peak calculation
                 self.pdat.current = peak_normalized  # Adjusted peak storage
                 if self.pdat.current > self.pdat.threshold:
@@ -202,7 +214,7 @@ class KBListener(threading.Thread):
             ch = self.getch()
             if ch in ["h", "?"]:
                 print("h: help, f: show filename, k: show peak level, p: show peak")
-                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filter, T: toggle filter timing (before/after)")
+                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filter, T: toggle filter timing (before/after), V: toggle VAD")
             elif ch == "k":
                 print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")  # Display peak with 2 decimal places
             elif ch == "v":
@@ -248,6 +260,14 @@ class KBListener(threading.Thread):
                 else:
                     self.pdat.processor.filter_timing = 'before'
                 print(f"Filter timing: {self.pdat.processor.filter_timing}")
+            elif ch == "V":
+                self.pdat.processor.use_vad = not self.pdat.processor.use_vad
+                if self.pdat.processor.use_vad:
+                    self.pdat.processor.vad = webrtcvad.Vad(VAD_MODE)
+                else:
+                    self.pdat.processor.vad = None
+                state = "enabled" if self.pdat.processor.use_vad else "disabled"
+                print(f"VAD {state}")
             elif ch == "q":
                 print("Quitting...")
                 self.rstop()
@@ -265,6 +285,7 @@ parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to r
 parser.add_argument("-n", "--normalize", action="store_true", help="Normalize audio [False]")  # Added normalization option
 parser.add_argument("-F", "--filter", action="store_true", help="Apply filtering to audio [False]")  # Added filtering option
 parser.add_argument("--filter-timing", choices=['before', 'after'], default='before', help="When to apply filtering: before or after peak detection [before]")  # Added filter timing option
+parser.add_argument("-V", "--vad", action="store_true", help="Use Voice Activity Detection (VAD) [False]")  # Added VAD option
 args = parser.parse_args()
 pdat = VoxDat()
 
@@ -288,7 +309,7 @@ else:
 
     pdat.running = True
     pdat.rt = RecordTimer(pdat)
-    pdat.processor = StreamProcessor(pdat, normalize=args.normalize, filter=args.filter, filter_timing=args.filter_timing)  # Pass normalize, filter, and filter_timing arguments
+    pdat.processor = StreamProcessor(pdat, normalize=args.normalize, filter=args.filter, filter_timing=args.filter_timing, use_vad=args.vad)  # Pass normalize, filter, filter_timing, and vad arguments
     pdat.processor.start()
     pdat.rt.start()
 
