@@ -11,6 +11,8 @@ import numpy as np
 import queue
 import soundfile as sf
 from scipy.signal import butter, lfilter, iirnotch
+import torchaudio
+import torch
 
 # Audio settings
 FORMAT = pyaudio.paInt16
@@ -89,6 +91,7 @@ class StreamProcessor(threading.Thread):
         self.normalize = normalize
         self.filter = filter
         self.filter_timing = filter_timing
+        self.vad = torchaudio.transforms.Vad(sample_rate=self.pdat.devrate)
 
     def normalize_audio(self, data):
         peak = np.max(np.abs(data))
@@ -102,6 +105,11 @@ class StreamProcessor(threading.Thread):
         data = apply_notch_filters(data, fs=self.pdat.devrate)
         return data
 
+    def is_speech(self, data):
+        data_tensor = torch.from_numpy(data).float()
+        data_tensor = data_tensor.unsqueeze(0)  # Add batch dimension
+        return self.vad(data_tensor).sum().item() > 0
+
     def run(self):
         while self.pdat.running:
             data = self.pdat.samplequeue.get(1)
@@ -109,42 +117,43 @@ class StreamProcessor(threading.Thread):
                 time.sleep(0.1)
             else:
                 data2 = np.frombuffer(data, dtype=np.int16)
-                if self.filter and self.filter_timing == 'before':
-                    data2 = self.apply_filters(data2)
-                peak = np.max(np.abs(data2))
-                peak_normalized = (100 * peak) / 2**15
-                self.pdat.current = peak_normalized
-                if self.pdat.current > self.pdat.threshold:
-                    self.rt.reset_timer(time.time())
-                if self.pdat.recordflag:
-                    if self.filter and self.filter_timing == 'after':
+                if self.is_speech(data2):
+                    if self.filter and self.filter_timing == 'before':
                         data2 = self.apply_filters(data2)
-                    if self.normalize:
-                        data2 = self.normalize_audio(data2)
-                    if not self.file:
-                        self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
-                        print("opening file " + self.filename + "\r")
-                        self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
-                        if self.pdat.rcnt != 0:
-                            self.pdat.rcnt = 0
-                            while True:
-                                try:
-                                    data3 = self.pdat.preque.get_nowait()
-                                    data3 = np.frombuffer(data3, dtype=np.int16)
-                                    if self.filter and self.filter_timing == 'after':
-                                        data3 = self.apply_filters(data3)
-                                    if self.normalize:
-                                        data3 = self.normalize_audio(data3)
-                                    self.file.write(data3)
-                                except queue.Empty:
-                                    break
-                    self.file.write(data2)
-                else:
-                    if self.pdat.rcnt == self.pdat.saverecs:
-                        self.pdat.preque.get_nowait()
+                    peak = np.max(np.abs(data2))
+                    peak_normalized = (100 * peak) / 2**15
+                    self.pdat.current = peak_normalized
+                    if self.pdat.current > self.pdat.threshold:
+                        self.rt.reset_timer(time.time())
+                    if self.pdat.recordflag:
+                        if self.filter and self.filter_timing == 'after':
+                            data2 = self.apply_filters(data2)
+                        if self.normalize:
+                            data2 = self.normalize_audio(data2)
+                        if not self.file:
+                            self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
+                            print("opening file " + self.filename + "\r")
+                            self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
+                            if self.pdat.rcnt != 0:
+                                self.pdat.rcnt = 0
+                                while True:
+                                    try:
+                                        data3 = self.pdat.preque.get_nowait()
+                                        data3 = np.frombuffer(data3, dtype=np.int16)
+                                        if self.filter and self.filter_timing == 'after':
+                                            data3 = self.apply_filters(data3)
+                                        if self.normalize:
+                                            data3 = self.normalize_audio(data3)
+                                        self.file.write(data3)
+                                    except queue.Empty:
+                                        break
+                        self.file.write(data2)
                     else:
-                        self.pdat.rcnt += 1
-                    self.pdat.preque.put(data)
+                        if self.pdat.rcnt == self.pdat.saverecs:
+                            self.pdat.preque.get_nowait()
+                        else:
+                            self.pdat.rcnt += 1
+                        self.pdat.preque.put(data)
 
     def ReadCallback(self, indata, framecount, timeinfo, status):
         self.pdat.samplequeue.put(indata)
