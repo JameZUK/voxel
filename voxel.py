@@ -185,9 +185,7 @@ class RecordTimer(threading.Thread):
                 print(f"{'#' * nf} {nf2}{rf}\r")
             time.sleep(1)
 
-    def reset_timer
-
-(self, timer: float):
+    def reset_timer(self, timer: float):
         self.timer = timer
 
 # Class for handling keyboard inputs
