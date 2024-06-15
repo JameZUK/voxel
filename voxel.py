@@ -41,6 +41,7 @@ class VoxDat:
         self.processor = None
         self.preque = None
         self.samplequeue = None
+        self.voice_detection = False  # Added attribute for voice detection
 
 # Suppress ALSA errors
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
@@ -91,7 +92,7 @@ class StreamProcessor(threading.Thread):
         self.normalize = normalize
         self.filter = filter
         self.filter_timing = filter_timing
-        self.vad = torchaudio.transforms.Vad(sample_rate=self.pdat.devrate)
+        self.vad = torchaudio.transforms.Vad(sample_rate=self.pdat.devrate) if self.pdat.voice_detection else None
 
     def normalize_audio(self, data):
         peak = np.max(np.abs(data))
@@ -118,7 +119,7 @@ class StreamProcessor(threading.Thread):
                 time.sleep(0.1)
             else:
                 data2 = np.frombuffer(data, dtype=np.int16)
-                if self.is_speech(data2):
+                if not self.pdat.voice_detection or self.is_speech(data2):
                     if self.filter and self.filter_timing == 'before':
                         data2 = self.apply_filters(data2)
                     peak = np.max(np.abs(data2))
@@ -230,7 +231,7 @@ class KBListener(threading.Thread):
             ch = self.getch()
             if ch in ["h", "?"]:
                 print("h: help, f: show filename, k: show peak level, p: show peak")
-                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filter, T: toggle filter timing (before/after)")
+                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filter, T: toggle filter timing (before/after), V: toggle voice detection")
             elif ch == "k":
                 print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")
             elif ch == "v":
@@ -273,6 +274,14 @@ class KBListener(threading.Thread):
             elif ch == "T":
                 self.pdat.processor.filter_timing = 'after' if self.pdat.processor.filter_timing == 'before' else 'before'
                 print(f"Filter timing: {self.pdat.processor.filter_timing}")
+            elif ch == "V":
+                self.pdat.voice_detection = not self.pdat.voice_detection
+                state = "enabled" if self.pdat.voice_detection else "disabled"
+                print(f"Voice Detection {state}")
+                if self.pdat.voice_detection:
+                    self.pdat.processor.vad = torchaudio.transforms.Vad(sample_rate=self.pdat.devrate)
+                else:
+                    self.pdat.processor.vad = None
             elif ch == "q":
                 print("Quitting...")
                 self.rstop()
@@ -292,6 +301,7 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--normalize", action="store_true", help="Normalize audio [False]")
     parser.add_argument("-F", "--filter", action="store_true", help="Apply filtering to audio [False]")
     parser.add_argument("--filter-timing", choices=['before', 'after'], default='before', help="When to apply filtering: before or after peak detection [before]")
+    parser.add_argument("--voice-detection", action="store_true", help="Enable voice detection [False]")  # Added argument for voice detection
     args = parser.parse_args()
     
     pdat = VoxDat()
@@ -300,6 +310,7 @@ if __name__ == "__main__":
     pdat.saverecs = args.saverecs
     pdat.hangdelay = args.hangdelay
     pdat.chunk = args.chunk
+    pdat.voice_detection = args.voice_detection  # Set voice detection flag
 
     with noalsaerr():
         pdat.pyaudio = pyaudio.PyAudio()
