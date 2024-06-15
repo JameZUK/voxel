@@ -106,6 +106,7 @@ class StreamProcessor(threading.Thread):
         return data
 
     def is_speech(self, data):
+        data = data.copy()  # Make a copy to ensure it's writable
         data_tensor = torch.from_numpy(data).float()
         data_tensor = data_tensor.unsqueeze(0)  # Add batch dimension
         return self.vad(data_tensor).sum().item() > 0
