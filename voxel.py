@@ -72,6 +72,7 @@ class StreamProcessor(threading.Thread):
         self.pdat.noise_floor_avg = np.mean(self.pdat.noise_floor_samples)
         self.pdat.noise_floor_std = np.std(self.pdat.noise_floor_samples)
         self.pdat.threshold = self.pdat.noise_floor_avg + (self.pdat.noise_floor_std * self.pdat.threshold_multiplier)
+        print(f"Noise Floor Avg: {self.pdat.noise_floor_avg}, Noise Floor Std: {self.pdat.noise_floor_std}, Threshold: {self.pdat.threshold}")
 
     def apply_notch_filter(self, data, fs, freq, quality_factor):
         b, a = iirnotch(freq, quality_factor, fs)
@@ -85,6 +86,10 @@ class StreamProcessor(threading.Thread):
                 continue
 
             data2 = np.frombuffer(data, dtype=np.int16)
+            print(f"Data2: {data2[:10]}")  # Print first 10 samples for brevity
+            peak = np.max(np.abs(data2))
+            self.pdat.current = (100 * peak) / MAX_INT16
+            print(f"Peak: {peak}, Current: {self.pdat.current}")
 
             if self.pdat.notch_filter_enabled:
                 for freq in [50, 100, 150]:
@@ -92,10 +97,8 @@ class StreamProcessor(threading.Thread):
 
             self.update_noise_floor_and_threshold(data2)
 
-            peak = np.max(np.abs(data2))
-            self.pdat.current = (100 * peak) / MAX_INT16
-
             if self.pdat.current > self.pdat.threshold:
+                print("Recording triggered")
                 self.pdat.rt.reset_timer(time.time())
                 self.pdat.recordflag = True
             else:
@@ -117,7 +120,6 @@ class StreamProcessor(threading.Thread):
                     self.pdat.rcnt += 1
                 self.pdat.preque.put(data)
 
-            # Print diagnostic information every second if enabled
             if self.pdat.show_diagnostics and int(time.time()) % 1 == 0:
                 self._print_diagnostics()
 
