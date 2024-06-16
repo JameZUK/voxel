@@ -118,7 +118,7 @@ class StreamProcessor(threading.Thread):
                 self._print_diagnostics()
 
     def _print_diagnostics(self):
-        print(f"Noise Floor: {self.pdat.noise_floor:.2f}, Threshold: {self.pdat.threshold:.2f}, Current Peak: {self.pdat.current:.2f}")
+        print(f"\rNoise Floor: {self.pdat.noise_floor:.2f}, Threshold: {self.pdat.threshold:.2f}, Current Peak: {self.pdat.current:.2f}", end="\r")
 
     def _write_data_on_the_fly(self, data):
         if not self.file:
@@ -130,7 +130,7 @@ class StreamProcessor(threading.Thread):
 
     def _open_new_file(self):
         self.filename = self._generate_filename()
-        print("Opening file " + self.filename + "\r")
+        print("\nOpening file " + self.filename)
         self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
 
     def _generate_filename(self):
@@ -146,7 +146,7 @@ class StreamProcessor(threading.Thread):
                 data = data / np.max(np.abs(data))
                 data = (data * MAX_INT16).astype(np.int16)
             self.filename = self._generate_filename()
-            print("Saving file " + self.filename + "\r")
+            print("\nSaving file " + self.filename)
             sf.write(self.filename, data, self.pdat.devrate, format='FLAC')
             self.pdat.raw_data = []
 
@@ -269,33 +269,33 @@ class KBListener(threading.Thread):
         if self.pdat.recordflag:
             self.pdat.recordflag = False
             self.pdat.processor.save_recording()
-            print("Recording disabled")
+            print("\nRecording disabled")
         else:
             self.pdat.recordflag = True
             self.pdat.rt.reset_timer(time.time())
-            print("Recording enabled")
+            print("\nRecording enabled")
 
     def _toggle_normalization(self):
         self.pdat.normalize_audio_enabled = not self.pdat.normalize_audio_enabled
         status = "enabled" if self.pdat.normalize_audio_enabled else "disabled"
-        print(f"Normalization {status}")
+        print(f"\nNormalization {status}")
 
     def _toggle_noise_filter(self):
         self.pdat.noise_filter_enabled = not self.pdat.noise_filter_enabled
         status = "enabled" if self.pdat.noise_filter_enabled else "disabled"
-        print(f"Noise filter {status}")
+        print(f"\nNoise filter {status}")
 
     def _toggle_notch_filter(self):
         self.pdat.notch_filter_enabled = not self.pdat.notch_filter_enabled
         status = "enabled" if self.pdat.notch_filter_enabled else "disabled"
-        print(f"Notch filter {status}")
+        print(f"\nNotch filter {status}")
 
     def _toggle_normalization_mode(self):
         self.pdat.normalize_mode = 'post' if self.pdat.normalize_mode == 'fly' else 'fly'
-        print(f"Normalization mode set to {self.pdat.normalize_mode}")
+        print(f"\nNormalization mode set to {self.pdat.normalize_mode}")
 
     def _quit(self):
-        print("Quitting...")
+        print("\nQuitting...")
         self.pdat.recordflag = False
         self.pdat.running = False
         self._reset_terminal()
@@ -381,4 +381,4 @@ if __name__ == "__main__":
         while pdat.running:
             time.sleep(1)
 
-    print("Done.")
+    print("\nDone.")
