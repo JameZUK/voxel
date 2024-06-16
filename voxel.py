@@ -46,7 +46,7 @@ class VoxDat:
         self.notch_filter_enabled = False
         self.noise_filter_enabled = False
         self.normalize_audio_enabled = False
-        self.normalize_mode = 'none'
+        self.normalize_mode = 'on-the-fly'
         self.raw_data = []
 
 # Suppress ALSA errors
