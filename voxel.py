@@ -279,13 +279,13 @@ class KBListener(threading.Thread):
             elif ch == "r":
                 if self.pdat.recordflag:
                     self.rstop()
-                    sys.stdout.write(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording disabled\n")
+                    sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording disabled\n")
                     sys.stdout.flush()
                 else:
                     self.pdat.recordflag = True
                     self.pdat.threshold = 0.3
                     self.pdat.rt.reset_timer(time.time())
-                    sys.stdout.write(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording enabled\n")
+                    sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording enabled\n")
                     sys.stdout.flush()
             elif ch == "p":
                 self.pdat.peakflag = not self.pdat.peakflag
@@ -304,7 +304,7 @@ class KBListener(threading.Thread):
                 sys.stdout.write(f"Filtering: {'enabled' if self.pdat.filter else 'disabled'}\n")
                 sys.stdout.flush()
             elif ch == "q":
-                sys.stdout.write("\nQuitting...\n")
+                sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Quitting...\n")
                 sys.stdout.flush()
                 self.rstop()
                 self.pdat.running = False
@@ -385,5 +385,5 @@ else:
         time.sleep(1)
 
 sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening stopped\n")
-sys.stdout.write("Done.\n")
+sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Done.\n")
 sys.stdout.flush()
