@@ -39,6 +39,7 @@ class VoxDat:
         self.processor = None
         self.preque = None
         self.samplequeue = None
+        self.noise_floor = 0  # Add noise floor tracking
 
 # Suppress ALSA errors
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
@@ -102,6 +103,13 @@ class StreamProcessor(threading.Thread):
         data = apply_notch_filters(data, fs=self.pdat.devrate)
         return data
 
+    def update_noise_floor(self, data):
+        current_noise = np.mean(np.abs(data))
+        if self.pdat.noise_floor == 0:
+            self.pdat.noise_floor = current_noise
+        else:
+            self.pdat.noise_floor = 0.9 * self.pdat.noise_floor + 0.1 * current_noise
+
     def run(self):
         while self.pdat.running:
             data = self.pdat.samplequeue.get(1)
@@ -109,6 +117,7 @@ class StreamProcessor(threading.Thread):
                 time.sleep(0.1)
             else:
                 data2 = np.frombuffer(data, dtype=np.int16)
+                self.update_noise_floor(data2)
                 if self.filter and self.filter_timing == 'before':
                     data2 = self.apply_filters(data2)
                 peak = np.max(np.abs(data2))
@@ -123,7 +132,7 @@ class StreamProcessor(threading.Thread):
                         data2 = self.normalize_audio(data2)
                     if not self.file:
                         self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
-                        print("opening file " + self.filename + "\r")
+                        print("Opening file " + self.filename + "\r")
                         self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
                         if self.pdat.rcnt != 0:
                             self.pdat.rcnt = 0
@@ -182,12 +191,10 @@ class RecordTimer(threading.Thread):
                 if nf <= 0:
                     nf = 1
                 rf = "*" if self.pdat.recordflag else ""
-                print(f"{'#' * nf} {nf2}{rf}\r")
+                print(f"Noise floor: {self.pdat.noise_floor:.2f}, Current: {self.pdat.current:.2f}, Threshold: {self.pdat.threshold}{rf}")
             time.sleep(1)
 
-    def reset_timer
-
-(self, timer: float):
+    def reset_timer(self, timer: float):
         self.timer = timer
 
 # Class for handling keyboard inputs
@@ -249,7 +256,7 @@ class KBListener(threading.Thread):
                     print("Recording disabled")
                 else:
                     self.pdat.recordflag = True
-                    self.pdat.threshold = 0.3
+                    self.pdat.threshold = self.pdat.noise_floor * 1.5  # Auto-adjust threshold based on noise floor
                     self.pdat.rt.reset_timer(time.time())
                     print("Recording enabled")
             elif ch == "p":
