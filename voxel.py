@@ -23,7 +23,7 @@ MAX_INT16 = 2**15 - 1
 class VoxDat:
     def __init__(self):
         self.devindex = 0
-        self.threshold_multiplier = 1.5  # Default multiplier for standard deviation
+        self.threshold_multiplier = 0.9  # Default multiplier for standard deviation
         self.saverecs = 8
         self.hangdelay = 6
         self.chunk = 8192
@@ -250,10 +250,10 @@ class KBListener(threading.Thread):
             self._quit()
 
     def _print_help(self):
-        print("h: help, f: show filename, k: show peak level, p: show peak")
-        print("q: quit, r: record on/off, v: set threshold multiplier")
-        print("n: toggle normalization, N: toggle noise filter, H: toggle notch filter")
-        print("M: toggle normalization mode (fly/post), d: toggle diagnostics")
+        print("h: help, f: show filename, k: show peak level, p: show peak\r\n")
+        print("q: quit, r: record on/off, v: set threshold multiplier\r\n")
+        print("n: toggle normalization, N: toggle noise filter, H: toggle notch filter\r\n")
+        print("M: toggle normalization mode (fly/post), d: toggle diagnostics\r\n")
 
     def _print_peak_info(self):
         print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold:.2f}\r\n")
@@ -343,7 +343,7 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--chunk", type=int, default=8192, help="Chunk size [8192]")
     parser.add_argument("-d", "--devno", type=int, default=2, help="Device number [2]")
     parser.add_argument("-s", "--saverecs", type=int, default=8, help="Records to buffer ahead of threshold [8]")
-    parser.add_argument("-t", "--threshold", type=float, default=1.5, help="Threshold multiplier [1.5]")
+    parser.add_argument("-t", "--threshold", type=float, default=0.9, help="Threshold multiplier [0.9]")
     parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
     parser.add_argument("-n", "--notch", action='store_true', help="Enable notch filter")
     parser.add_argument("-N", "--noise", action='store_true', help="Enable noise filter")
