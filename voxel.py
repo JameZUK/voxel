@@ -26,6 +26,7 @@ class VoxDat:
         self.debug_info = {}
         self.record_start_time = None
         self.listening = False
+        self.harmonics = 4  # Default number of harmonics to filter
 
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
 
@@ -66,12 +67,12 @@ def notch_filter(data, freq, fs, quality=30):
     y = lfilter(b, a, data)
     return y
 
-def apply_notch_filter(data, fs):
+def apply_notch_filter(data, fs, harmonics):
     dominant_freq = find_dominant_frequency(data, fs)
     sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Dominant frequency for notch filter: {dominant_freq} Hz\n")
     sys.stdout.flush()
     data = notch_filter(data, dominant_freq, fs)
-    for harmonic in range(2, 5):  # Apply additional notch filters for the first few harmonics
+    for harmonic in range(2, harmonics + 1):  # Apply additional notch filters for the specified harmonics
         data = notch_filter(data, dominant_freq * harmonic, fs)
     return data
 
@@ -82,7 +83,7 @@ def normalize_audio(data):
         data = np.int16(data * normalization_factor)
     return data
 
-def post_process(filename, devrate, apply_filter=False, apply_normalize=False):
+def post_process(filename, devrate, apply_filter=False, apply_normalize=False, harmonics=4):
     data, samplerate = sf.read(filename, dtype='int16')
     sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Loaded recording for post-processing.\n")
     sys.stdout.flush()
@@ -95,7 +96,7 @@ def post_process(filename, devrate, apply_filter=False, apply_normalize=False):
         
         sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Applying notch filter.\n")
         sys.stdout.flush()
-        data = apply_notch_filter(data, fs=samplerate)
+        data = apply_notch_filter(data, fs=samplerate, harmonics=harmonics)
         sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Notch filter applied.\n")
         sys.stdout.flush()
     if apply_normalize:
@@ -177,7 +178,7 @@ class StreamProcessor(threading.Thread):
             if self.pdat.filter or self.pdat.normalize:
                 sys.stdout.write(f"\n{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Starting post-processing of {self.filename}\n")
                 sys.stdout.flush()
-                post_process(self.filename, self.pdat.devrate, self.pdat.filter, self.pdat.normalize)
+                post_process(self.filename, self.pdat.devrate, self.pdat.filter, self.pdat.normalize, self.pdat.harmonics)
                 sys.stdout.write(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Post-processing completed for {self.filename}\n")
                 sys.stdout.flush()
             self.filename = "No File"
@@ -319,6 +320,7 @@ parser.add_argument("-t", "--threshold", type=float, default=0.3, help="Minimum 
 parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
 parser.add_argument("-n", "--normalize", action="store_true", help="Normalize audio [False]")
 parser.add_argument("-F", "--filter", action="store_true", help="Apply filtering to audio [False]")
+parser.add_argument("--harmonics", type=int, default=4, help="Number of harmonics to apply notch filter [4]")
 args = parser.parse_args()
 pdat = VoxDat()
 
@@ -329,6 +331,7 @@ pdat.hangdelay = args.hangdelay
 pdat.chunk = args.chunk
 pdat.normalize = args.normalize
 pdat.filter = args.filter
+pdat.harmonics = args.harmonics
 
 with noalsaerr():
     pdat.pyaudio = pyaudio.PyAudio()
