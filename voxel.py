@@ -221,8 +221,6 @@ class KBListener(threading.Thread):
                 self.pdat.peakflag = pf
             elif ch == "f":
                 if self.pdat.recordflag:
-
-
                     print("Filename: " + self.pdat.processor.filename)
                 else:
                     print("Not recording")
