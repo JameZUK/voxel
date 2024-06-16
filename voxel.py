@@ -11,6 +11,8 @@ import numpy as np
 import queue
 import soundfile as sf
 from scipy.signal import iirnotch, lfilter
+import os
+from datetime import datetime
 
 # Audio settings
 FORMAT = pyaudio.paInt16
@@ -106,7 +108,7 @@ class StreamProcessor(threading.Thread):
 
                 if self.pdat.recordflag:
                     if not self.file:
-                        self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
+                        self.filename = self.generate_filename()
                         print("Opening file " + self.filename + "\r")
                         self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
                         if self.pdat.rcnt != 0:
@@ -128,6 +130,14 @@ class StreamProcessor(threading.Thread):
                     else:
                         self.pdat.rcnt += 1
                     self.pdat.preque.put(data)
+
+    def generate_filename(self):
+        now = datetime.now()
+        month = now.strftime("%Y-%m")
+        week = now.strftime("%U")
+        base_path = os.path.join("recordings", month, f"week_{week}")
+        os.makedirs(base_path, exist_ok=True)
+        return os.path.join(base_path, now.strftime("%Y%m%d-%H%M%S.flac"))
 
     def ReadCallback(self, indata, framecount, timeinfo, status):
         self.pdat.samplequeue.put(indata)
