@@ -111,7 +111,7 @@ class StreamProcessor(threading.Thread):
                         directory = os.path.join("recordings", month_folder, week_folder)
                         os.makedirs(directory, exist_ok=True)
                         self.filename = os.path.join(directory, now.strftime("%Y%m%d-%H%M%S.flac"))
-                        print(f"{now.strftime('%Y-%m-%d %H:%M:%S')} - Opening file {self.filename}")
+                        print(f"\n{now.strftime('%Y-%m-%d %H:%M:%S')} - Opening file {self.filename}")
                         self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
                         if self.pdat.rcnt != 0:
                             self.pdat.rcnt = 0
@@ -147,7 +147,7 @@ class StreamProcessor(threading.Thread):
             self.file = None
             end_time = datetime.now()
             recording_duration = end_time - self.pdat.record_start_time
-            print(f"{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Closing file {self.filename}")
+            print(f"\n{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Closing file {self.filename}")
             print(f"Recording duration: {recording_duration}")
             self.filename = "No File"
 
@@ -164,12 +164,12 @@ class RecordTimer(threading.Thread):
                 if not self.pdat.recordflag:
                     self.pdat.recordflag = True
                     self.pdat.record_start_time = datetime.now()
-                    print(f"{self.pdat.record_start_time.strftime('%Y-%m-%d %H:%M:%S')} - Recording started")
+                    print(f"\n{self.pdat.record_start_time.strftime('%Y-%m-%d %H:%M:%S')} - Recording started")
             if time.time() - self.timer > self.pdat.hangdelay + 1:
                 if self.pdat.recordflag:
                     self.pdat.recordflag = False
                     self.pdat.processor.close()
-                    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording stopped")
+                    print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording stopped")
             if self.pdat.peakflag:
                 nf = min(int(self.pdat.current), 99)  # Ensure nf is an integer
                 nf2 = nf
@@ -217,13 +217,13 @@ class KBListener(threading.Thread):
                 print("h: help, f: show filename, k: show peak level, p: show peak")
                 print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filtering, d: show debug info")
             elif ch == "k":
-                print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")  # Display peak with 2 decimal places
+                print(f"\nPeak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")  # Display peak with 2 decimal places
             elif ch == "v":
                 self.treset()
                 pf = self.pdat.peakflag
                 self.pdat.peakflag = False
                 try:
-                    newpeak = float(input("New Peak Limit: "))  # Changed to float
+                    newpeak = float(input("\nNew Peak Limit: "))  # Changed to float
                 except ValueError:
                     newpeak = 0
                 if newpeak == 0:
@@ -233,35 +233,35 @@ class KBListener(threading.Thread):
                 self.pdat.peakflag = pf
             elif ch == "f":
                 if self.pdat.recordflag:
-                    print("Filename: " + self.pdat.processor.filename)
+                    print(f"\nFilename: {self.pdat.processor.filename}")
                 else:
                     print("Not recording")
             elif ch == "r":
                 if self.pdat.recordflag:
                     self.rstop()
-                    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording disabled")
+                    print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording disabled")
                 else:
                     self.pdat.recordflag = True
                     self.pdat.threshold = 0.3  # Adjusted default threshold
                     self.pdat.rt.reset_timer(time.time())
-                    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording enabled")
+                    print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording enabled")
             elif ch == "p":
                 self.pdat.peakflag = not self.pdat.peakflag
             elif ch == "n":
                 self.pdat.normalize = not self.pdat.normalize
                 state = "enabled" if self.pdat.normalize else "disabled"
-                print(f"Normalization {state}")
+                print(f"\nNormalization {state}")
             elif ch == "F":
                 self.pdat.filter = not self.pdat.filter
                 state = "enabled" if self.pdat.filter else "disabled"
-                print(f"Filtering {state}")
+                print(f"\nFiltering {state}")
             elif ch == "d":
                 notch_freq = self.pdat.debug_info.get('notch_frequency', 'Not determined')
-                print(f"Notch Filter Frequency: {notch_freq}")
+                print(f"\nNotch Filter Frequency: {notch_freq}")
                 print(f"Normalization: {'enabled' if self.pdat.normalize else 'disabled'}")
                 print(f"Filtering: {'enabled' if self.pdat.filter else 'disabled'}")
             elif ch == "q":
-                print("Quitting...")
+                print("\nQuitting...")
                 self.rstop()
                 self.pdat.running = False
                 self.treset()
@@ -332,10 +332,10 @@ else:
     while pdat.running:
         if not pdat.recordflag and not pdat.listening:
             pdat.listening = True
-            print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening...")
+            print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening...")
         elif pdat.recordflag and pdat.listening:
             pdat.listening = False
         time.sleep(1)
 
-print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening stopped")
+print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening stopped")
 print("Done.")
