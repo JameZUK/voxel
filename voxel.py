@@ -109,26 +109,11 @@ class StreamProcessor(threading.Thread):
                     self.rt.reset_timer(time.time())
 
                 if self.pdat.recordflag:
-                    if not self.file:
-                        self.filename = self.generate_filename()
-                        print("Opening file " + self.filename + "\r")
-                        if self.pdat.normalize_mode == 'on-the-fly':
-                            self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
-                        else:
-                            self.pdat.raw_data = []
-                        if self.pdat.rcnt != 0:
-                            self.pdat.rcnt = 0
-                            while True:
-                                try:
-                                    data3 = self.pdat.preque.get_nowait()
-                                    data3 = np.frombuffer(data3, dtype=np.int16)
-                                    if self.pdat.normalize_mode == 'on-the-fly':
-                                        self.file.write(data3)
-                                    else:
-                                        self.pdat.raw_data.append(data3)
-                                except queue.Empty:
-                                    break
                     if self.pdat.normalize_mode == 'on-the-fly':
+                        if not self.file:
+                            self.filename = self.generate_filename()
+                            print("Opening file " + self.filename + "\r")
+                            self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
                         if self.pdat.normalize_audio_enabled:
                             data2 = data2 / np.max(np.abs(data2))
                             data2 = (data2 * (2**15 - 1)).astype(np.int16)
@@ -152,11 +137,11 @@ class StreamProcessor(threading.Thread):
 
     def save_recording(self):
         if self.pdat.normalize_mode == 'post-processing' and self.pdat.raw_data:
-            self.filename = self.generate_filename()
             data = np.concatenate(self.pdat.raw_data)
             if self.pdat.normalize_audio_enabled:
                 data = data / np.max(np.abs(data))
                 data = (data * (2**15 - 1)).astype(np.int16)
+            self.filename = self.generate_filename()
             print("Saving file " + self.filename + "\r")
             sf.write(self.filename, data, self.pdat.devrate, format='FLAC')
             self.pdat.raw_data = []
