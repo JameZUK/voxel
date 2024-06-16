@@ -23,7 +23,6 @@ MAX_INT16 = 2**15 - 1
 class VoxDat:
     def __init__(self):
         self.devindex = 0
-        self.threshold_factor = 1.5
         self.suggested_threshold_factor = 1.5
         self.saverecs = 8
         self.hangdelay = 6
@@ -70,8 +69,7 @@ class StreamProcessor(threading.Thread):
         if len(self.pdat.noise_floor_samples) > 100:
             self.pdat.noise_floor_samples.pop(0)
         self.pdat.noise_floor = np.mean(self.pdat.noise_floor_samples)
-        self.pdat.threshold = self.pdat.noise_floor * self.pdat.threshold_factor
-        print(f"Updated Noise Floor: {self.pdat.noise_floor}, Updated Threshold: {self.pdat.threshold}")
+        self.pdat.threshold = self.pdat.noise_floor * self.pdat.suggested_threshold_factor
 
     def apply_notch_filter(self, data, fs, freq, quality_factor):
         b, a = iirnotch(freq, quality_factor, fs)
@@ -85,8 +83,6 @@ class StreamProcessor(threading.Thread):
                 continue
 
             data2 = np.frombuffer(data, dtype=np.int16)
-            if self.pdat.noise_filter_enabled:
-                pass
 
             if self.pdat.notch_filter_enabled:
                 for freq in [50, 100, 150]:
@@ -96,11 +92,12 @@ class StreamProcessor(threading.Thread):
 
             peak = np.max(np.abs(data2))
             self.pdat.current = (100 * peak) / MAX_INT16
-            print(f"Current Peak: {self.pdat.current}")
 
             if self.pdat.current > self.pdat.threshold:
                 self.pdat.rt.reset_timer(time.time())
-                print(f"Recording triggered at peak: {self.pdat.current}")
+                self.pdat.recordflag = True
+            else:
+                self.pdat.recordflag = False
 
             if self.pdat.recordflag:
                 if self.pdat.normalize_mode == 'fly':
@@ -108,7 +105,7 @@ class StreamProcessor(threading.Thread):
                 else:
                     self.pdat.raw_data.append(data2)
             else:
-                if self.pdat.recordflag and self.file:
+                if self.file:
                     self.file.close()
                     self.file = None
 
@@ -225,8 +222,6 @@ class KBListener(threading.Thread):
             self._print_help()
         elif ch == "k":
             self._print_peak_info()
-        elif ch == "v":
-            self._set_trigger_level()
         elif ch == "f":
             self._print_filename()
         elif ch == "r":
@@ -254,19 +249,6 @@ class KBListener(threading.Thread):
 
     def _print_peak_info(self):
         print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold:.2f}")
-
-    def _set_trigger_level(self):
-        self._reset_terminal()
-        self.pdat.peakflag = False
-        try:
-            new_factor = float(input("New Threshold Factor: "))
-        except ValueError:
-            new_factor = 0
-        if new_factor:
-            self.pdat.threshold_factor = new_factor
-        else:
-            print("? Number not recognized")
-        self.pdat.peakflag = True
 
     def _print_filename(self):
         if self.pdat.recordflag:
@@ -320,7 +302,6 @@ def display_config(args):
     print(f"  Chunk size: {args.chunk}")
     print(f"  Device number: {args.devno}")
     print(f"  Records to buffer ahead of threshold: {args.saverecs}")
-    print(f"  Minimum volume threshold factor: {args.threshold}")
     print(f"  Seconds to record after input drops below threshold: {args.hangdelay}")
     print(f"  Notch filter: {'enabled' if args.notch else 'disabled'}")
     print(f"  Noise filter: {'enabled' if args.noise else 'disabled'}")
@@ -334,7 +315,6 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--chunk", type=int, default=8192, help="Chunk size [8192]")
     parser.add_argument("-d", "--devno", type=int, default=2, help="Device number [2]")
     parser.add_argument("-s", "--saverecs", type=int, default=8, help="Records to buffer ahead of threshold [8]")
-    parser.add_argument("-t", "--threshold", type=float, default=1.5, help="Minimum volume threshold factor [1.5]")
     parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
     parser.add_argument("-n", "--notch", action='store_true', help="Enable notch filter")
     parser.add_argument("-N", "--noise", action='store_true', help="Enable noise filter")
@@ -346,7 +326,7 @@ if __name__ == "__main__":
 
     pdat = VoxDat()
     pdat.devindex = args.devno
-    pdat.threshold_factor = args.threshold
+    pdat.suggested_threshold_factor = 1.5  # Hard-coded suggested multiplier value
     pdat.saverecs = args.saverecs
     pdat.hangdelay = args.hangdelay
     pdat.chunk = args.chunk
