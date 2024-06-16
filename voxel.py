@@ -71,6 +71,7 @@ class StreamProcessor(threading.Thread):
             self.pdat.noise_floor_samples.pop(0)
         self.pdat.noise_floor = np.mean(self.pdat.noise_floor_samples)
         self.pdat.threshold = self.pdat.noise_floor * self.pdat.threshold_factor
+        print(f"Updated Noise Floor: {self.pdat.noise_floor}, Updated Threshold: {self.pdat.threshold}")
 
     def apply_notch_filter(self, data, fs, freq, quality_factor):
         b, a = iirnotch(freq, quality_factor, fs)
@@ -95,9 +96,11 @@ class StreamProcessor(threading.Thread):
 
             peak = np.max(np.abs(data2))
             self.pdat.current = (100 * peak) / MAX_INT16
+            print(f"Current Peak: {self.pdat.current}")
 
             if self.pdat.current > self.pdat.threshold:
                 self.pdat.rt.reset_timer(time.time())
+                print(f"Recording triggered at peak: {self.pdat.current}")
 
             if self.pdat.recordflag:
                 if self.pdat.normalize_mode == 'fly':
@@ -318,7 +321,6 @@ def display_config(args):
     print(f"  Device number: {args.devno}")
     print(f"  Records to buffer ahead of threshold: {args.saverecs}")
     print(f"  Minimum volume threshold factor: {args.threshold}")
-    print(f"  Suggested threshold factor: {args.suggested_threshold_factor}")
     print(f"  Seconds to record after input drops below threshold: {args.hangdelay}")
     print(f"  Notch filter: {'enabled' if args.notch else 'disabled'}")
     print(f"  Noise filter: {'enabled' if args.noise else 'disabled'}")
@@ -333,7 +335,6 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--devno", type=int, default=2, help="Device number [2]")
     parser.add_argument("-s", "--saverecs", type=int, default=8, help="Records to buffer ahead of threshold [8]")
     parser.add_argument("-t", "--threshold", type=float, default=1.5, help="Minimum volume threshold factor [1.5]")
-    parser.add_argument("-st", "--suggested-threshold-factor", type=float, default=1.5, help="Suggested threshold factor [1.5]")
     parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
     parser.add_argument("-n", "--notch", action='store_true', help="Enable notch filter")
     parser.add_argument("-N", "--noise", action='store_true', help="Enable noise filter")
@@ -346,7 +347,6 @@ if __name__ == "__main__":
     pdat = VoxDat()
     pdat.devindex = args.devno
     pdat.threshold_factor = args.threshold
-    pdat.suggested_threshold_factor = args.suggested_threshold_factor
     pdat.saverecs = args.saverecs
     pdat.hangdelay = args.hangdelay
     pdat.chunk = args.chunk
