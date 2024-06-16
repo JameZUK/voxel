@@ -109,16 +109,19 @@ class StreamProcessor(threading.Thread):
                     self._write_data_on_the_fly(data2)
                 else:
                     self.pdat.raw_data.append(data2)
+                if not self.file:
+                    self._open_new_file()
             else:
                 if self.file:
                     self.file.close()
                     self.file = None
+                    print("Recording stopped")
 
-                if self.pdat.rcnt == self.pdat.saverecs:
-                    self.pdat.preque.get_nowait()
-                else:
-                    self.pdat.rcnt += 1
-                self.pdat.preque.put(data)
+            if self.pdat.rcnt == self.pdat.saverecs:
+                self.pdat.preque.get_nowait()
+            else:
+                self.pdat.rcnt += 1
+            self.pdat.preque.put(data)
 
             if self.pdat.show_diagnostics and int(time.time()) % 1 == 0:
                 self._print_diagnostics()
@@ -155,6 +158,7 @@ class StreamProcessor(threading.Thread):
             print("\nSaving file " + self.filename)
             sf.write(self.filename, data, self.pdat.devrate, format='FLAC')
             self.pdat.raw_data = []
+            print("Recording saved")
 
     def ReadCallback(self, indata, framecount, timeinfo, status):
         self.pdat.samplequeue.put(indata)
