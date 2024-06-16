@@ -42,7 +42,7 @@ class VoxDat:
         self.notch_filter_enabled = False
         self.noise_filter_enabled = False
         self.normalize_audio_enabled = False
-        self.normalize_mode = 'fly'
+        self.normalize_mode = 'post'
         self.samplequeue = queue.Queue()
         self.preque = queue.Queue()
 
