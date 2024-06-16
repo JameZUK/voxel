@@ -39,7 +39,8 @@ class VoxDat:
         self.processor = None
         self.preque = None
         self.samplequeue = None
-        self.noise_floor = 0  # Add noise floor tracking
+        self.noise_floor = 0
+        self.noise_floor_samples = []
 
 # Suppress ALSA errors
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
@@ -105,10 +106,10 @@ class StreamProcessor(threading.Thread):
 
     def update_noise_floor(self, data):
         current_noise = np.mean(np.abs(data))
-        if self.pdat.noise_floor == 0:
-            self.pdat.noise_floor = current_noise
-        else:
-            self.pdat.noise_floor = 0.9 * self.pdat.noise_floor + 0.1 * current_noise
+        self.pdat.noise_floor_samples.append(current_noise)
+        if len(self.pdat.noise_floor_samples) > 100:
+            self.pdat.noise_floor_samples.pop(0)
+        self.pdat.noise_floor = np.mean(self.pdat.noise_floor_samples)
 
     def run(self):
         while self.pdat.running:
@@ -169,7 +170,6 @@ class StreamProcessor(threading.Thread):
             self.filename = "No File"
 
 # Class for managing the recording timer
-# Class for managing the recording timer
 class RecordTimer(threading.Thread):
     def __init__(self, pdat: VoxDat):
         threading.Thread.__init__(self)
@@ -192,13 +192,14 @@ class RecordTimer(threading.Thread):
                 if nf <= 0:
                     nf = 1
                 rf = "*" if self.pdat.recordflag else ""
+                noise_floor_normalized = (self.pdat.noise_floor / (2**15 - 1)) * 100  # Normalize noise floor to 0-100 scale
                 print("\r" + " " * 80 + "\r", end="")  # Clear the previous line
-                print(f"Noise floor: {self.pdat.noise_floor:.2f}, Current: {self.pdat.current:.2f}, Threshold: {self.pdat.threshold:.2f}{rf}", end="\r")
+                print(f"Noise floor: {noise_floor_normalized:.2f}, Current: {self.pdat.current:.2f}, Threshold: {self.pdat.threshold:.2f}{rf}", end="\r")
             time.sleep(1)
 
     def reset_timer(self, timer: float):
         self.timer = timer
-        
+
 # Class for handling keyboard inputs
 class KBListener(threading.Thread):
     def __init__(self, pdat: VoxDat):
@@ -258,7 +259,7 @@ class KBListener(threading.Thread):
                     print("Recording disabled")
                 else:
                     self.pdat.recordflag = True
-                    self.pdat.threshold = self.pdat.noise_floor * 1.5  # Auto-adjust threshold based on noise floor
+                    self.pdat.threshold = (self.pdat.noise_floor / (2**15 - 1)) * 100 * 1.5  # Adjust threshold to match normalized noise floor
                     self.pdat.rt.reset_timer(time.time())
                     print("Recording enabled")
             elif ch == "p":
