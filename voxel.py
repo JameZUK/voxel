@@ -10,6 +10,7 @@ import time
 import numpy as np
 import queue
 import soundfile as sf
+from scipy.signal import iirnotch, lfilter
 
 # Audio settings
 FORMAT = pyaudio.paInt16
@@ -40,6 +41,9 @@ class VoxDat:
         self.samplequeue = None
         self.noise_floor = 0
         self.noise_floor_samples = []
+        self.notch_filter_enabled = False
+        self.noise_filter_enabled = False
+        self.normalize_audio_enabled = False
 
 # Suppress ALSA errors
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
@@ -70,6 +74,10 @@ class StreamProcessor(threading.Thread):
             self.pdat.noise_floor_samples.pop(0)
         self.pdat.noise_floor = np.mean(self.pdat.noise_floor_samples)
 
+    def apply_notch_filter(self, data, fs, freq, quality_factor):
+        b, a = iirnotch(freq, quality_factor, fs)
+        return lfilter(b, a, data)
+
     def run(self):
         while self.pdat.running:
             data = self.pdat.samplequeue.get(1)
@@ -77,15 +85,25 @@ class StreamProcessor(threading.Thread):
                 time.sleep(0.1)
             else:
                 data2 = np.frombuffer(data, dtype=np.int16)
+
+                if self.pdat.noise_filter_enabled:
+                    # Apply noise filter here if needed
+                    pass
+
+                if self.pdat.notch_filter_enabled:
+                    freqs = [50, 100, 150]  # Example frequencies for notch filtering
+                    for freq in freqs:
+                        data2 = self.apply_notch_filter(data2, self.pdat.devrate, freq, 30)
+
                 self.update_noise_floor(data2)
-                
+
                 peak = np.max(np.abs(data2))
                 peak_normalized = (100 * peak) / 2**15
                 self.pdat.current = peak_normalized
-                
+
                 if self.pdat.current > self.pdat.threshold:
                     self.rt.reset_timer(time.time())
-                
+
                 if self.pdat.recordflag:
                     if not self.file:
                         self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
@@ -100,6 +118,9 @@ class StreamProcessor(threading.Thread):
                                     self.file.write(data3)
                                 except queue.Empty:
                                     break
+                    if self.pdat.normalize_audio_enabled:
+                        data2 = data2 / np.max(np.abs(data2))
+                        data2 = (data2 * (2**15 - 1)).astype(np.int16)
                     self.file.write(data2)
                 else:
                     if self.pdat.rcnt == self.pdat.saverecs:
@@ -185,6 +206,7 @@ class KBListener(threading.Thread):
             if ch in ["h", "?"]:
                 print("h: help, f: show filename, k: show peak level, p: show peak")
                 print("q: quit, r: record on/off, v: set trigger level")
+                print("n: toggle normalization, N: toggle noise filter, H: toggle notch filter")
             elif ch == "k":
                 print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")
             elif ch == "v":
@@ -216,6 +238,18 @@ class KBListener(threading.Thread):
                     print("Recording enabled")
             elif ch == "p":
                 self.pdat.peakflag = not self.pdat.peakflag
+            elif ch == "n":
+                self.pdat.normalize_audio_enabled = not self.pdat.normalize_audio_enabled
+                status = "enabled" if self.pdat.normalize_audio_enabled else "disabled"
+                print(f"Normalization {status}")
+            elif ch == "N":
+                self.pdat.noise_filter_enabled = not self.pdat.noise_filter_enabled
+                status = "enabled" if self.pdat.noise_filter_enabled else "disabled"
+                print(f"Noise filter {status}")
+            elif ch == "H":
+                self.pdat.notch_filter_enabled = not self.pdat.notch_filter_enabled
+                status = "enabled" if self.pdat.notch_filter_enabled else "disabled"
+                print(f"Notch filter {status}")
             elif ch == "q":
                 print("Quitting...")
                 self.rstop()
@@ -230,6 +264,9 @@ def display_config(args):
     print(f"  Records to buffer ahead of threshold: {args.saverecs}")
     print(f"  Minimum volume threshold: {args.threshold}")
     print(f"  Seconds to record after input drops below threshold: {args.hangdelay}")
+    print(f"  Notch filter: {'enabled' if args.notch else 'disabled'}")
+    print(f"  Noise filter: {'enabled' if args.noise else 'disabled'}")
+    print(f"  Normalization: {'enabled' if args.normalize else 'disabled'}")
 
 # Main script execution
 if __name__ == "__main__":
@@ -240,6 +277,9 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--saverecs", type=int, default=8, help="Records to buffer ahead of threshold [8]")
     parser.add_argument("-t", "--threshold", type=float, default=0.3, help="Minimum volume threshold (0.1-99) [0.3]")
     parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
+    parser.add_argument("-n", "--notch", action='store_true', help="Enable notch filter")
+    parser.add_argument("-N", "--noise", action='store_true', help="Enable noise filter")
+    parser.add_argument("-m", "--normalize", action='store_true', help="Enable normalization")
     args = parser.parse_args()
 
     display_config(args)  # Display configuration before proceeding
@@ -250,6 +290,9 @@ if __name__ == "__main__":
     pdat.saverecs = args.saverecs
     pdat.hangdelay = args.hangdelay
     pdat.chunk = args.chunk
+    pdat.notch_filter_enabled = args.notch
+    pdat.noise_filter_enabled = args.noise
+    pdat.normalize_audio_enabled = args.normalize
 
     with noalsaerr():
         pdat.pyaudio = pyaudio.PyAudio()
