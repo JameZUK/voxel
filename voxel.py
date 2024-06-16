@@ -120,6 +120,7 @@ class StreamProcessor(threading.Thread):
                 data2 = np.frombuffer(data, dtype=np.int16)
                 self.update_noise_floor(data2)
                 
+                # Apply filters if needed before normalization
                 if self.filter and self.filter_timing == 'before':
                     data2 = self.apply_filters(data2)
                 
@@ -131,10 +132,14 @@ class StreamProcessor(threading.Thread):
                     self.rt.reset_timer(time.time())
                 
                 if self.pdat.recordflag:
+                    # Apply filters if needed after normalization
                     if self.filter and self.filter_timing == 'after':
                         data2 = self.apply_filters(data2)
+                    
+                    # Normalize audio if required
                     if self.normalize:
                         data2 = self.normalize_audio(data2)
+
                     if not self.file:
                         self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
                         print("Opening file " + self.filename + "\r")
@@ -145,8 +150,10 @@ class StreamProcessor(threading.Thread):
                                 try:
                                     data3 = self.pdat.preque.get_nowait()
                                     data3 = np.frombuffer(data3, dtype=np.int16)
+                                    # Apply filters after normalization if needed
                                     if self.filter and self.filter_timing == 'after':
                                         data3 = self.apply_filters(data3)
+                                    # Normalize audio if required
                                     if self.normalize:
                                         data3 = self.normalize_audio(data3)
                                     self.file.write(data3)
@@ -258,7 +265,7 @@ class KBListener(threading.Thread):
                 else:
                     print("Not recording")
             elif ch == "r":
-                if (self.pdat.recordflag):
+                if self.pdat.recordflag:
                     self.rstop()
                     print("Recording disabled")
                 else:
