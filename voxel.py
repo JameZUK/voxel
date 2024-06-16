@@ -139,6 +139,13 @@ class StreamProcessor(threading.Thread):
             sf.write(self.filename, data, self.pdat.devrate, format='FLAC')
             self.pdat.raw_data = []
 
+    def ReadCallback(self, indata, framecount, timeinfo, status):
+        self.pdat.samplequeue.put(indata)
+        if self.pdat.running:
+            return (None, pyaudio.paContinue)
+        else:
+            return (None, pyaudio.paAbort)
+
     def close(self):
         if self.file:
             self.file.close()
