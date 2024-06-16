@@ -68,6 +68,7 @@ def notch_filter(data, freq, fs, quality=30):
 
 def apply_notch_filter(data, fs):
     dominant_freq = find_dominant_frequency(data, fs)
+    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Dominant frequency for notch filter: {dominant_freq} Hz", flush=True)
     return notch_filter(data, dominant_freq, fs)
 
 def normalize_audio(data):
@@ -79,12 +80,21 @@ def normalize_audio(data):
 
 def post_process(filename, devrate, apply_filter=False, apply_normalize=False):
     data, samplerate = sf.read(filename, dtype='int16')
+    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Loaded recording for post-processing.", flush=True)
     if apply_filter:
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Applying bandpass filter.", flush=True)
         data = butter_bandpass_filter(data, lowcut=300, highcut=3400, fs=samplerate)
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Bandpass filter applied.", flush=True)
+        
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Applying notch filter.", flush=True)
         data = apply_notch_filter(data, fs=samplerate)
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Notch filter applied.", flush=True)
     if apply_normalize:
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Normalizing audio.", flush=True)
         data = normalize_audio(data)
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Audio normalized.", flush=True)
     sf.write(filename, data, samplerate)
+    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Post-processing completed and saved.", flush=True)
 
 class StreamProcessor(threading.Thread):
     def __init__(self, pdat: VoxDat):
@@ -116,7 +126,7 @@ class StreamProcessor(threading.Thread):
                         directory = os.path.join("recordings", month_folder, week_folder)
                         os.makedirs(directory, exist_ok=True)
                         self.filename = os.path.join(directory, now.strftime("%Y%m%d-%H%M%S.flac"))
-                        print(f"\n{now.strftime('%Y-%m-%d %H:%M:%S')} - Opening file {self.filename}")
+                        print(f"\n{now.strftime('%Y-%m-%d %H:%M:%S')} - Opening file {self.filename}", flush=True)
                         self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
                         if self.pdat.rcnt != 0:
                             self.pdat.rcnt = 0
@@ -148,12 +158,12 @@ class StreamProcessor(threading.Thread):
             self.file = None
             end_time = datetime.now()
             recording_duration = end_time - self.pdat.record_start_time
-            print(f"\n{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Closing file {self.filename}")
-            print(f"Recording duration: {recording_duration}")
+            print(f"\n{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Closing file {self.filename}", flush=True)
+            print(f"Recording duration: {recording_duration}", flush=True)
             if self.pdat.filter or self.pdat.normalize:
-                print(f"\n{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Starting post-processing of {self.filename}")
+                print(f"\n{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Starting post-processing of {self.filename}", flush=True)
                 post_process(self.filename, self.pdat.devrate, self.pdat.filter, self.pdat.normalize)
-                print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Post-processing completed for {self.filename}")
+                print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Post-processing completed for {self.filename}", flush=True)
             self.filename = "No File"
 
 class RecordTimer(threading.Thread):
@@ -169,12 +179,12 @@ class RecordTimer(threading.Thread):
                 if not self.pdat.recordflag:
                     self.pdat.recordflag = True
                     self.pdat.record_start_time = datetime.now()
-                    print(f"\n{self.pdat.record_start_time.strftime('%Y-%m-%d %H:%M:%S')} - Recording started")
+                    print(f"\n{self.pdat.record_start_time.strftime('%Y-%m-%d %H:%M:%S')} - Recording started", flush=True)
             if time.time() - self.timer > self.pdat.hangdelay + 1:
                 if self.pdat.recordflag:
                     self.pdat.recordflag = False
                     self.pdat.processor.close()
-                    print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording stopped")
+                    print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording stopped", flush=True)
             if self.pdat.peakflag:
                 nf = min(int(self.pdat.current), 99)  # Ensure nf is an integer
                 nf2 = nf
@@ -219,10 +229,10 @@ class KBListener(threading.Thread):
         while self.pdat.running:
             ch = self.getch()
             if ch in ["h", "?"]:
-                print("h: help, f: show filename, k: show peak level, p: show peak")
-                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filtering, d: show debug info")
+                print("\nh: help, f: show filename, k: show peak level, p: show peak", flush=True)
+                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filtering, d: show debug info", flush=True)
             elif ch == "k":
-                print(f"\nPeak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")  # Display peak with 2 decimal places
+                print(f"\nPeak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}", flush=True)  # Display peak with 2 decimal places
             elif ch == "v":
                 self.treset()
                 pf = self.pdat.peakflag
@@ -232,41 +242,39 @@ class KBListener(threading.Thread):
                 except ValueError:
                     newpeak = 0
                 if newpeak == 0:
-                    print("? Number not recognized")
+                    print("\n? Number not recognized", flush=True)
                 else:
                     self.pdat.threshold = newpeak
                 self.pdat.peakflag = pf
             elif ch == "f":
                 if self.pdat.recordflag:
-                    print(f"\nFilename: {self.pdat.processor.filename}")
+                    print(f"\nFilename: {self.pdat.processor.filename}", flush=True)
                 else:
-                    print("Not recording")
+                    print("\nNot recording", flush=True)
             elif ch == "r":
                 if self.pdat.recordflag:
                     self.rstop()
-                    print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording disabled")
+                    print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording disabled", flush=True)
                 else:
                     self.pdat.recordflag = True
                     self.pdat.threshold = 0.3  # Adjusted default threshold
                     self.pdat.rt.reset_timer(time.time())
-                    print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording enabled")
+                    print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording enabled", flush=True)
             elif ch == "p":
                 self.pdat.peakflag = not self.pdat.peakflag
             elif ch == "n":
                 self.pdat.normalize = not self.pdat.normalize
                 state = "enabled" if self.pdat.normalize else "disabled"
-                print(f"\nNormalization {state}")
+                print(f"\nNormalization {state}", flush=True)
             elif ch == "F":
                 self.pdat.filter = not self.pdat.filter
                 state = "enabled" if self.pdat.filter else "disabled"
-                print(f"\nFiltering {state}")
+                print(f"\nFiltering {state}", flush=True)
             elif ch == "d":
-                notch_freq = self.pdat.debug_info.get('notch_frequency', 'Not determined')
-                print(f"\nNotch Filter Frequency: {notch_freq}")
-                print(f"Normalization: {'enabled' if self.pdat.normalize else 'disabled'}")
-                print(f"Filtering: {'enabled' if self.pdat.filter else 'disabled'}")
+                print(f"\nNormalization: {'enabled' if self.pdat.normalize else 'disabled'}", flush=True)
+                print(f"Filtering: {'enabled' if self.pdat.filter else 'disabled'}", flush=True)
             elif ch == "q":
-                print("\nQuitting...")
+                print("\nQuitting...", flush=True)
                 self.rstop()
                 self.pdat.running = False
                 self.treset()
@@ -313,11 +321,11 @@ else:
     # Select the correct ALSA device with valid input channels
     dev_info = pdat.pyaudio.get_device_info_by_index(pdat.devindex)
     if dev_info['maxInputChannels'] < CHANNELS:
-        print(f"Error: Device {pdat.devindex} does not support {CHANNELS} channel(s). Please select a valid device.")
-        print("Listing all devices again to help you select:")
+        print(f"Error: Device {pdat.devindex} does not support {CHANNELS} channel(s). Please select a valid device.", flush=True)
+        print("Listing all devices again to help you select:", flush=True)
         for i in range(pdat.pyaudio.get_device_count()):
             dev_info = pdat.pyaudio.get_device_info_by_index(i)
-            print(f"Device {i}: {dev_info['name']} - Max Input Channels: {dev_info['maxInputChannels']} - Host API: {dev_info['hostApi']}")
+            print(f"Device {i}: {dev_info['name']} - Max Input Channels: {dev_info['maxInputChannels']} - Host API: {dev_info['hostApi']}", flush=True)
         sys.exit(1)
     
     pdat.devrate = int(dev_info.get('defaultSampleRate'))
@@ -330,17 +338,17 @@ else:
                                        stream_callback=pdat.processor.ReadCallback)
     pdat.devstream.start_stream()
 
-    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening started")
+    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening started", flush=True)
     pdat.km = KBListener(pdat)
     pdat.km.start()
 
     while pdat.running:
         if not pdat.recordflag and not pdat.listening:
             pdat.listening = True
-            print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening...")
+            print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening...", flush=True)
         elif pdat.recordflag and pdat.listening:
             pdat.listening = False
         time.sleep(1)
 
-print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening stopped")
-print("Done.")
+print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening stopped", flush=True)
+print("Done.", flush=True)
