@@ -121,6 +121,10 @@ class StreamProcessor(threading.Thread):
                     else:
                         self.pdat.raw_data.append(data2)
                 else:
+                    if self.pdat.recordflag and self.file:
+                        self.file.close()
+                        self.file = None
+
                     if self.pdat.rcnt == self.pdat.saverecs:
                         self.pdat.preque.get_nowait()
                     else:
@@ -174,7 +178,7 @@ class RecordTimer(threading.Thread):
                 self.pdat.recordflag = True
             if time.time() - self.timer > self.pdat.hangdelay + 1:
                 self.pdat.recordflag = False
-                self.pdat.processor.close()
+                self.pdat.processor.save_recording()  # Save recording when recording flag is turned off
             if self.pdat.peakflag:
                 nf = min(int(self.pdat.current), 99)
                 nf2 = nf
