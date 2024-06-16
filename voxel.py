@@ -312,6 +312,12 @@ class KBListener(threading.Thread):
         self._reset_terminal()
         time.sleep(0.5)
 
+def list_audio_devices(pa):
+    print("Available audio devices:")
+    for i in range(pa.get_device_count()):
+        dev_info = pa.get_device_info_by_index(i)
+        print(f"Device {i}: {dev_info['name']} - Max Input Channels: {dev_info['maxInputChannels']} - Host API: {dev_info['hostApi']}")
+
 def display_config(args):
     print("\nCurrent Configuration:")
     print(f"  Chunk size: {args.chunk}")
@@ -339,8 +345,6 @@ if __name__ == "__main__":
     parser.add_argument("-M", "--normalizemode", choices=['fly', 'post'], default='fly', help="Normalization mode: 'fly' or 'post' [fly]")
     args = parser.parse_args()
 
-    display_config(args)  # Display configuration before proceeding
-
     pdat = VoxDat()
     pdat.devindex = args.devno
     pdat.threshold_multiplier = args.threshold
@@ -356,27 +360,23 @@ if __name__ == "__main__":
         pdat.pyaudio = pyaudio.PyAudio()
 
     if args.command == "listdevs":
-        print("Device Information:")
-        for i in range(pdat.pyaudio.get_device_count()):
-            dev_info = pdat.pyaudio.get_device_info_by_index(i)
-            print(f"Device {i}: {dev_info['name']} - Max Input Channels: {dev_info['maxInputChannels']} - Host API: {dev_info['hostApi']}")
+        list_audio_devices(pdat.pyaudio)
     else:
+        display_config(args)
+
+        dev_info = pdat.pyaudio.get_device_info_by_index(pdat.devindex)
+        if dev_info['maxInputChannels'] < CHANNELS:
+            print(f"Error: Device {pdat.devindex} does not support {CHANNELS} channel(s). Please select a valid device.")
+            list_audio_devices(pdat.pyaudio)
+            sys.exit(1)
+
+        pdat.devrate = int(dev_info.get('defaultSampleRate'))
         pdat.running = True
         pdat.rt = RecordTimer(pdat)
         pdat.processor = StreamProcessor(pdat)
         pdat.processor.start()
         pdat.rt.start()
 
-        dev_info = pdat.pyaudio.get_device_info_by_index(pdat.devindex)
-        if dev_info['maxInputChannels'] < CHANNELS:
-            print(f"Error: Device {pdat.devindex} does not support {CHANNELS} channel(s). Please select a valid device.")
-            print("Listing all devices again to help you select:")
-            for i in range(pdat.pyaudio.get_device_count()):
-                dev_info = pdat.pyaudio.get_device_info_by_index(i)
-                print(f"Device {i}: {dev_info['name']} - Max Input Channels: {dev_info['maxInputChannels']} - Host API: {dev_info['hostApi']}")
-            sys.exit(1)
-
-        pdat.devrate = int(dev_info.get('defaultSampleRate'))
         pdat.devstream = pdat.pyaudio.open(format=FORMAT,
                                            channels=CHANNELS,
                                            rate=pdat.devrate,
