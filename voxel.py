@@ -119,23 +119,23 @@ class StreamProcessor(threading.Thread):
             else:
                 data2 = np.frombuffer(data, dtype=np.int16)
                 self.update_noise_floor(data2)
-                
+
                 # Apply filters if needed before normalization
                 if self.filter and self.filter_timing == 'before':
                     data2 = self.apply_filters(data2)
-                
+
                 peak = np.max(np.abs(data2))
                 peak_normalized = (100 * peak) / 2**15
                 self.pdat.current = peak_normalized
-                
+
                 if self.pdat.current > self.pdat.threshold:
                     self.rt.reset_timer(time.time())
-                
+
                 if self.pdat.recordflag:
                     # Apply filters if needed after normalization
                     if self.filter and self.filter_timing == 'after':
                         data2 = self.apply_filters(data2)
-                    
+
                     # Normalize audio if required
                     if self.normalize:
                         data2 = self.normalize_audio(data2)
@@ -150,8 +150,8 @@ class StreamProcessor(threading.Thread):
                                 try:
                                     data3 = self.pdat.preque.get_nowait()
                                     data3 = np.frombuffer(data3, dtype=np.int16)
-                                    # Apply filters after normalization if needed
-                                    if self.filter and self.filter_timing == 'after':
+                                    # Apply filters if needed before normalization
+                                    if self.filter and self.filter_timing == 'before':
                                         data3 = self.apply_filters(data3)
                                     # Normalize audio if required
                                     if self.normalize:
