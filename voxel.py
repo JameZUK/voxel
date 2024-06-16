@@ -94,7 +94,7 @@ class StreamProcessor(threading.Thread):
                 data2 = np.frombuffer(data, dtype=np.int16)
                 if self.pdat.filter:
                     data2 = butter_bandpass_filter(data2, lowcut=300, highcut=3400, fs=self.pdat.devrate)  # Apply bandpass filter
-                    data2 = apply_notch_filter(data2, fs=self.pdat.devrate, self.pdat)  # Apply notch filter
+                    data2 = apply_notch_filter(data2, fs=self.pdat.devrate, pdat=self.pdat)  # Apply notch filter
                 peak = np.max(np.abs(data2))  # Peak calculation
                 peak_normalized = (100 * peak) / 2**15  # Normalized peak calculation
                 self.pdat.current = peak_normalized  # Adjusted peak storage
