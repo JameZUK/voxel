@@ -23,7 +23,7 @@ MAX_INT16 = 2**15 - 1
 class VoxDat:
     def __init__(self):
         self.devindex = 0
-        self.threshold_multiplier = 3.0  # Default multiplier for standard deviation
+        self.threshold_multiplier = 1.5  # Default multiplier for standard deviation
         self.saverecs = 8
         self.hangdelay = 6
         self.chunk = 8192
@@ -339,12 +339,12 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--chunk", type=int, default=8192, help="Chunk size [8192]")
     parser.add_argument("-d", "--devno", type=int, default=2, help="Device number [2]")
     parser.add_argument("-s", "--saverecs", type=int, default=8, help="Records to buffer ahead of threshold [8]")
-    parser.add_argument("-t", "--threshold", type=float, default=3.0, help="Threshold multiplier [3.0]")
+    parser.add_argument("-t", "--threshold", type=float, default=1.5, help="Threshold multiplier [1.5]")
     parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
     parser.add_argument("-n", "--notch", action='store_true', help="Enable notch filter")
     parser.add_argument("-N", "--noise", action='store_true', help="Enable noise filter")
     parser.add_argument("-m", "--normalize", action='store_true', help="Enable normalization")
-    parser.add_argument("-M", "--normalizemode", choices=['fly', 'post'], default='fly', help="Normalization mode: 'fly' or 'post' [fly]")
+    parser.add_argument("-M", "--normalizemode", choices=['fly', 'post'], default='post', help="Normalization mode: 'fly' or 'post' [fly]")
     args = parser.parse_args()
 
     pdat = VoxDat()
