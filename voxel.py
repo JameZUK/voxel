@@ -11,8 +11,6 @@ import numpy as np
 import queue
 import soundfile as sf
 from scipy.signal import butter, lfilter, iirnotch
-import torchaudio
-import torch
 
 # Audio settings
 FORMAT = pyaudio.paInt16
@@ -41,7 +39,6 @@ class VoxDat:
         self.processor = None
         self.preque = None
         self.samplequeue = None
-        self.voice_detection = False  # Added attribute for voice detection
 
 # Suppress ALSA errors
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
@@ -92,7 +89,6 @@ class StreamProcessor(threading.Thread):
         self.normalize = normalize
         self.filter = filter
         self.filter_timing = filter_timing
-        self.vad = torchaudio.transforms.Vad(sample_rate=self.pdat.devrate) if self.pdat.voice_detection else None
 
     def normalize_audio(self, data):
         peak = np.max(np.abs(data))
@@ -106,12 +102,6 @@ class StreamProcessor(threading.Thread):
         data = apply_notch_filters(data, fs=self.pdat.devrate)
         return data
 
-    def is_speech(self, data):
-        data = data.copy()  # Make a copy to ensure it's writable
-        data_tensor = torch.from_numpy(data).float()
-        data_tensor = data_tensor.unsqueeze(0)  # Add batch dimension
-        return self.vad(data_tensor).sum().item() > 0
-
     def run(self):
         while self.pdat.running:
             data = self.pdat.samplequeue.get(1)
@@ -119,46 +109,42 @@ class StreamProcessor(threading.Thread):
                 time.sleep(0.1)
             else:
                 data2 = np.frombuffer(data, dtype=np.int16)
+                if self.filter and self.filter_timing == 'before':
+                    data2 = self.apply_filters(data2)
                 peak = np.max(np.abs(data2))
                 peak_normalized = (100 * peak) / 2**15
                 self.pdat.current = peak_normalized
-                
-                if not self.pdat.voice_detection or self.is_speech(data2):
-                    if self.filter and self.filter_timing == 'before':
+                if self.pdat.current > self.pdat.threshold:
+                    self.rt.reset_timer(time.time())
+                if self.pdat.recordflag:
+                    if self.filter and self.filter_timing == 'after':
                         data2 = self.apply_filters(data2)
-                    
-                    if self.pdat.current > self.pdat.threshold:
-                        self.rt.reset_timer(time.time())
-                    
-                    if self.pdat.recordflag:
-                        if self.filter and self.filter_timing == 'after':
-                            data2 = self.apply_filters(data2)
-                        if self.normalize:
-                            data2 = self.normalize_audio(data2)
-                        if not self.file:
-                            self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
-                            print("opening file " + self.filename + "\r")
-                            self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
-                            if self.pdat.rcnt != 0:
-                                self.pdat.rcnt = 0
-                                while True:
-                                    try:
-                                        data3 = self.pdat.preque.get_nowait()
-                                        data3 = np.frombuffer(data3, dtype=np.int16)
-                                        if self.filter and self.filter_timing == 'after':
-                                            data3 = self.apply_filters(data3)
-                                        if self.normalize:
-                                            data3 = self.normalize_audio(data3)
-                                        self.file.write(data3)
-                                    except queue.Empty:
-                                        break
-                        self.file.write(data2)
+                    if self.normalize:
+                        data2 = self.normalize_audio(data2)
+                    if not self.file:
+                        self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
+                        print("opening file " + self.filename + "\r")
+                        self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
+                        if self.pdat.rcnt != 0:
+                            self.pdat.rcnt = 0
+                            while True:
+                                try:
+                                    data3 = self.pdat.preque.get_nowait()
+                                    data3 = np.frombuffer(data3, dtype=np.int16)
+                                    if self.filter and self.filter_timing == 'after':
+                                        data3 = self.apply_filters(data3)
+                                    if self.normalize:
+                                        data3 = self.normalize_audio(data3)
+                                    self.file.write(data3)
+                                except queue.Empty:
+                                    break
+                    self.file.write(data2)
+                else:
+                    if self.pdat.rcnt == self.pdat.saverecs:
+                        self.pdat.preque.get_nowait()
                     else:
-                        if self.pdat.rcnt == self.pdat.saverecs:
-                            self.pdat.preque.get_nowait()
-                        else:
-                            self.pdat.rcnt += 1
-                        self.pdat.preque.put(data)
+                        self.pdat.rcnt += 1
+                    self.pdat.preque.put(data)
 
     def ReadCallback(self, indata, framecount, timeinfo, status):
         self.pdat.samplequeue.put(indata)
@@ -199,7 +185,9 @@ class RecordTimer(threading.Thread):
                 print(f"{'#' * nf} {nf2}{rf}\r")
             time.sleep(1)
 
-    def reset_timer(self, timer: float):
+    def reset_timer
+
+(self, timer: float):
         self.timer = timer
 
 # Class for handling keyboard inputs
@@ -234,7 +222,7 @@ class KBListener(threading.Thread):
             ch = self.getch()
             if ch in ["h", "?"]:
                 print("h: help, f: show filename, k: show peak level, p: show peak")
-                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filter, T: toggle filter timing (before/after), V: toggle voice detection")
+                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filter, T: toggle filter timing (before/after)")
             elif ch == "k":
                 print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")
             elif ch == "v":
@@ -277,14 +265,6 @@ class KBListener(threading.Thread):
             elif ch == "T":
                 self.pdat.processor.filter_timing = 'after' if self.pdat.processor.filter_timing == 'before' else 'before'
                 print(f"Filter timing: {self.pdat.processor.filter_timing}")
-            elif ch == "V":
-                self.pdat.voice_detection = not self.pdat.voice_detection
-                state = "enabled" if self.pdat.voice_detection else "disabled"
-                print(f"Voice Detection {state}")
-                if self.pdat.voice_detection:
-                    self.pdat.processor.vad = torchaudio.transforms.Vad(sample_rate=self.pdat.devrate)
-                else:
-                    self.pdat.processor.vad = None
             elif ch == "q":
                 print("Quitting...")
                 self.rstop()
@@ -304,7 +284,6 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--normalize", action="store_true", help="Normalize audio [False]")
     parser.add_argument("-F", "--filter", action="store_true", help="Apply filtering to audio [False]")
     parser.add_argument("--filter-timing", choices=['before', 'after'], default='before', help="When to apply filtering: before or after peak detection [before]")
-    parser.add_argument("--voice-detection", action="store_true", help="Enable voice detection [False]")  # Added argument for voice detection
     args = parser.parse_args()
     
     pdat = VoxDat()
@@ -313,7 +292,6 @@ if __name__ == "__main__":
     pdat.saverecs = args.saverecs
     pdat.hangdelay = args.hangdelay
     pdat.chunk = args.chunk
-    pdat.voice_detection = args.voice_detection  # Set voice detection flag
 
     with noalsaerr():
         pdat.pyaudio = pyaudio.PyAudio()
