@@ -139,7 +139,7 @@ class StreamProcessor(threading.Thread):
                         directory = os.path.join("recordings", month_folder, week_folder)
                         os.makedirs(directory, exist_ok=True)
                         self.filename = os.path.join(directory, now.strftime("%Y%m%d-%H%M%S.flac"))
-                        sys.stdout.write(f"\n{now.strftime('%Y-%m-%d %H:%M:%S')} - Opening file {self.filename}\n")
+                        sys.stdout.write(f"{now.strftime('%Y-%m-%d %H:%M:%S')} - Opening file {self.filename}\n")
                         sys.stdout.flush()
                         self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
                         if self.pdat.rcnt != 0:
@@ -172,14 +172,14 @@ class StreamProcessor(threading.Thread):
             self.file = None
             end_time = datetime.now()
             recording_duration = end_time - self.pdat.record_start_time
-            sys.stdout.write(f"\n{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Closing file {self.filename}\n")
+            sys.stdout.write(f"{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Closing file {self.filename}\n")
             sys.stdout.write(f"{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Recording duration: {recording_duration}\n")
             sys.stdout.flush()
             if self.pdat.filter or self.pdat.normalize:
-                sys.stdout.write(f"\n{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Starting post-processing of {self.filename}\n")
+                sys.stdout.write(f"{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Starting post-processing of {self.filename}\n")
                 sys.stdout.flush()
                 post_process(self.filename, self.pdat.devrate, self.pdat.filter, self.pdat.normalize, self.pdat.harmonics)
-                sys.stdout.write(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Post-processing completed for {self.filename}\n")
+                sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Post-processing completed for {self.filename}\n")
                 sys.stdout.flush()
             self.filename = "No File"
 
@@ -196,13 +196,13 @@ class RecordTimer(threading.Thread):
                 if not self.pdat.recordflag:
                     self.pdat.recordflag = True
                     self.pdat.record_start_time = datetime.now()
-                    sys.stdout.write(f"\n{self.pdat.record_start_time.strftime('%Y-%m-%d %H:%M:%S')} - Recording started\n")
+                    sys.stdout.write(f"{self.pdat.record_start_time.strftime('%Y-%m-%d %H:%M:%S')} - Recording started\n")
                     sys.stdout.flush()
             if time.time() - self.timer > self.pdat.hangdelay + 1:
                 if self.pdat.recordflag:
                     self.pdat.recordflag = False
                     self.pdat.processor.close()
-                    sys.stdout.write(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording stopped\n")
+                    sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording stopped\n")
                     sys.stdout.flush()
             if self.pdat.peakflag:
                 nf = min(int(self.pdat.current), 99)  # Ensure nf is an integer
@@ -378,12 +378,12 @@ else:
     while pdat.running:
         if not pdat.recordflag and not pdat.listening:
             pdat.listening = True
-            sys.stdout.write(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening...\n")
+            sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening...\n")
             sys.stdout.flush()
         elif pdat.recordflag and pdat.listening:
             pdat.listening = False
         time.sleep(1)
 
-sys.stdout.write(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening stopped\n")
+sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening stopped\n")
 sys.stdout.write("Done.\n")
 sys.stdout.flush()
