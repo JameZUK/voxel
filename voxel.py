@@ -25,6 +25,7 @@ class VoxDat:
         self.preque = self.samplequeue = None
         self.debug_info = {}
         self.record_start_time = None
+        self.listening = False
 
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
 
@@ -160,8 +161,8 @@ class RecordTimer(threading.Thread):
     def run(self):
         while self.pdat.running:
             if time.time() - self.timer < self.pdat.hangdelay:
-                self.pdat.recordflag = True
-                if self.pdat.record_start_time is None:
+                if not self.pdat.recordflag:
+                    self.pdat.recordflag = True
                     self.pdat.record_start_time = datetime.now()
                     print(f"{self.pdat.record_start_time.strftime('%Y-%m-%d %H:%M:%S')} - Recording started")
             if time.time() - self.timer > self.pdat.hangdelay + 1:
@@ -177,7 +178,7 @@ class RecordTimer(threading.Thread):
                 if nf <= 0:
                     nf = 1
                 rf = "*" if self.pdat.recordflag else ""
-                print(f"{'#' * nf} {nf2}{rf}\r")
+                print(f"{'#' * nf} {nf2}{rf}\r", end="", flush=True)
             time.sleep(1)
                 
     def reset_timer(self, timer: float):
@@ -324,11 +325,17 @@ else:
                                        stream_callback=pdat.processor.ReadCallback)
     pdat.devstream.start_stream()
 
+    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening started")
     pdat.km = KBListener(pdat)
     pdat.km.start()
 
     while pdat.running:
-        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening...")
+        if not pdat.recordflag and not pdat.listening:
+            pdat.listening = True
+            print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening...")
+        elif pdat.recordflag and pdat.listening:
+            pdat.listening = False
         time.sleep(1)
 
+print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening stopped")
 print("Done.")
