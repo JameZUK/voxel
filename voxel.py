@@ -17,6 +17,7 @@ from datetime import datetime
 # Audio settings
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
+MAX_INT16 = 2**15 - 1
 
 # Class to store recording and processing parameters
 class VoxDat:
@@ -67,7 +68,7 @@ class StreamProcessor(threading.Thread):
         if len(self.pdat.noise_floor_samples) > 100:
             self.pdat.noise_floor_samples.pop(0)
         self.pdat.noise_floor = np.mean(self.pdat.noise_floor_samples)
-        self.pdat.threshold = self.pdat.noise_floor * self.pdat.threshold_factor
+        self.pdat.threshold = (self.pdat.noise_floor / MAX_INT16) * 100 * self.pdat.threshold_factor
 
     def apply_notch_filter(self, data, fs, freq, quality_factor):
         b, a = iirnotch(freq, quality_factor, fs)
@@ -91,7 +92,7 @@ class StreamProcessor(threading.Thread):
             self.update_noise_floor_and_threshold(data2)
 
             peak = np.max(np.abs(data2))
-            self.pdat.current = (100 * peak) / 2**15
+            self.pdat.current = (100 * peak) / MAX_INT16
 
             if self.pdat.current > self.pdat.threshold:
                 self.pdat.rt.reset_timer(time.time())
@@ -117,7 +118,7 @@ class StreamProcessor(threading.Thread):
             self._open_new_file()
         if self.pdat.normalize_audio_enabled:
             data = data / np.max(np.abs(data))
-            data = (data * (2**15 - 1)).astype(np.int16)
+            data = (data * MAX_INT16).astype(np.int16)
         self.file.write(data)
 
     def _open_new_file(self):
@@ -136,7 +137,7 @@ class StreamProcessor(threading.Thread):
             data = np.concatenate(self.pdat.raw_data)
             if self.pdat.normalize_audio_enabled:
                 data = data / np.max(np.abs(data))
-                data = (data * (2**15 - 1)).astype(np.int16)
+                data = (data * MAX_INT16).astype(np.int16)
             self.filename = self._generate_filename()
             print("Saving file " + self.filename + "\r")
             sf.write(self.filename, data, self.pdat.devrate, format='FLAC')
@@ -176,14 +177,10 @@ class RecordTimer(threading.Thread):
         self.timer = timer
 
     def _display_peak_info(self):
-        nf = min(int(self.pdat.current), 99)
-        nf2 = nf if nf <= 50 else int(min(50 + (nf - 50) / 3, 72))
-        nf = nf if nf > 0 else 1
         rf = "*" if self.pdat.recordflag else ""
-        noise_floor_normalized = (self.pdat.noise_floor / (2**15 - 1)) * 100
-        threshold_normalized = (self.pdat.threshold / (2**15 - 1)) * 100
+        noise_floor_normalized = (self.pdat.noise_floor / MAX_INT16) * 100
         print("\r" + " " * 80 + "\r", end="")
-        print(f"Noise floor: {noise_floor_normalized:.2f}, Current: {self.pdat.current:.2f}, Threshold: {threshold_normalized:.2f}{rf}", end="\r")
+        print(f"Noise floor: {noise_floor_normalized:.2f}, Current: {self.pdat.current:.2f}, Threshold: {self.pdat.threshold:.2f}{rf}", end="\r")
 
 class KBListener(threading.Thread):
     def __init__(self, pdat: VoxDat):
@@ -245,11 +242,11 @@ class KBListener(threading.Thread):
         self._reset_terminal()
         self.pdat.peakflag = False
         try:
-            newpeak = float(input("New Peak Limit: "))
+            new_factor = float(input("New Threshold Factor: "))
         except ValueError:
-            newpeak = 0
-        if newpeak:
-            self.pdat.threshold_factor = newpeak
+            new_factor = 0
+        if new_factor:
+            self.pdat.threshold_factor = new_factor
         else:
             print("? Number not recognized")
         self.pdat.peakflag = True
