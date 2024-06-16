@@ -285,6 +285,17 @@ class KBListener(threading.Thread):
                 self.treset()
                 time.sleep(0.5)
 
+def display_config(args):
+    print("\nCurrent Configuration:")
+    print(f"  Chunk size: {args.chunk}")
+    print(f"  Device number: {args.devno}")
+    print(f"  Records to buffer ahead of threshold: {args.saverecs}")
+    print(f"  Minimum volume threshold: {args.threshold}")
+    print(f"  Seconds to record after input drops below threshold: {args.hangdelay}")
+    print(f"  Normalize audio: {'enabled' if args.normalize else 'disabled'}")
+    print(f"  Apply filtering to audio: {'enabled' if args.filter else 'disabled'}")
+    print(f"  Filter timing: {args.filter_timing}\n")
+
 # Main script execution
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -298,7 +309,9 @@ if __name__ == "__main__":
     parser.add_argument("-F", "--filter", action="store_true", help="Apply filtering to audio [False]")
     parser.add_argument("--filter-timing", choices=['before', 'after'], default='before', help="When to apply filtering: before or after peak detection [before]")
     args = parser.parse_args()
-    
+
+    display_config(args)
+
     pdat = VoxDat()
     pdat.devindex = args.devno
     pdat.threshold = args.threshold
