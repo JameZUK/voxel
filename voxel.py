@@ -33,6 +33,7 @@ class VoxDat:
         self.recordflag = False
         self.running = False
         self.peakflag = False
+        self.show_diagnostics = False
         self.raw_data = []
         self.noise_floor_samples = []
         self.noise_floor = 0
@@ -113,12 +114,13 @@ class StreamProcessor(threading.Thread):
                     self.pdat.rcnt += 1
                 self.pdat.preque.put(data)
 
-            # Print diagnostic information every second
-            if int(time.time()) % 1 == 0:
+            # Print diagnostic information every second if enabled
+            if self.pdat.show_diagnostics and int(time.time()) % 1 == 0:
                 self._print_diagnostics()
 
     def _print_diagnostics(self):
-        print(f"\rNoise Floor: {self.pdat.noise_floor:.2f}, Threshold: {self.pdat.threshold:.2f}, Current Peak: {self.pdat.current:.2f}", end="\r")
+        suggested_threshold = self.pdat.noise_floor * 1.5
+        print(f"\rNoise Floor: {self.pdat.noise_floor:.2f}, Threshold: {self.pdat.threshold:.2f}, Current Peak: {self.pdat.current:.2f}, Suggested Threshold: {suggested_threshold:.2f}", end="\r")
 
     def _write_data_on_the_fly(self, data):
         if not self.file:
@@ -187,8 +189,9 @@ class RecordTimer(threading.Thread):
         rf = "*" if self.pdat.recordflag else ""
         noise_floor_normalized = (self.pdat.noise_floor / MAX_INT16) * 100
         threshold_normalized = (self.pdat.threshold / MAX_INT16) * 100
+        suggested_threshold = self.pdat.noise_floor * 1.5
         print("\r" + " " * 80 + "\r", end="")
-        print(f"Noise floor: {noise_floor_normalized:.2f}%, Current: {self.pdat.current:.2f}%, Threshold: {threshold_normalized:.2f}%{rf}", end="\r")
+        print(f"Noise floor: {noise_floor_normalized:.2f}%, Current: {self.pdat.current:.2f}%, Threshold: {threshold_normalized:.2f}%, Suggested Threshold: {suggested_threshold:.2f}%{rf}", end="\r")
 
 class KBListener(threading.Thread):
     def __init__(self, pdat: VoxDat):
@@ -234,6 +237,8 @@ class KBListener(threading.Thread):
             self._toggle_notch_filter()
         elif ch == "M":
             self._toggle_normalization_mode()
+        elif ch == "d":
+            self._toggle_diagnostics()
         elif ch == "q":
             self._quit()
 
@@ -241,7 +246,7 @@ class KBListener(threading.Thread):
         print("h: help, f: show filename, k: show peak level, p: show peak")
         print("q: quit, r: record on/off, v: set trigger level")
         print("n: toggle normalization, N: toggle noise filter, H: toggle notch filter")
-        print("M: toggle normalization mode (fly/post)")
+        print("M: toggle normalization mode (fly/post), d: toggle diagnostics")
 
     def _print_peak_info(self):
         print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold:.2f}")
@@ -293,6 +298,11 @@ class KBListener(threading.Thread):
     def _toggle_normalization_mode(self):
         self.pdat.normalize_mode = 'post' if self.pdat.normalize_mode == 'fly' else 'fly'
         print(f"\nNormalization mode set to {self.pdat.normalize_mode}")
+
+    def _toggle_diagnostics(self):
+        self.pdat.show_diagnostics = not self.pdat.show_diagnostics
+        status = "enabled" if self.pdat.show_diagnostics else "disabled"
+        print(f"\nDiagnostics {status}")
 
     def _quit(self):
         print("\nQuitting...")
