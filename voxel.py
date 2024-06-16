@@ -23,6 +23,7 @@ class VoxDat:
         self.recordflag = self.running = self.peakflag = self.normalize = self.filter = False
         self.rt = self.km = self.ttysettings = self.ttyfd = self.pyaudio = self.devstream = self.processor = None
         self.preque = self.samplequeue = None
+        self.debug_info = {}
 
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
 
@@ -63,8 +64,9 @@ def notch_filter(data, freq, fs, quality=30):
     y = lfilter(b, a, data)
     return y
 
-def apply_notch_filter(data, fs):
+def apply_notch_filter(data, fs, pdat):
     dominant_freq = find_dominant_frequency(data, fs)
+    pdat.debug_info['notch_frequency'] = dominant_freq
     return notch_filter(data, dominant_freq, fs)
 
 class StreamProcessor(threading.Thread):
@@ -92,7 +94,7 @@ class StreamProcessor(threading.Thread):
                 data2 = np.frombuffer(data, dtype=np.int16)
                 if self.pdat.filter:
                     data2 = butter_bandpass_filter(data2, lowcut=300, highcut=3400, fs=self.pdat.devrate)  # Apply bandpass filter
-                    data2 = apply_notch_filter(data2, fs=self.pdat.devrate)  # Apply notch filter
+                    data2 = apply_notch_filter(data2, fs=self.pdat.devrate, self.pdat)  # Apply notch filter
                 peak = np.max(np.abs(data2))  # Peak calculation
                 peak_normalized = (100 * peak) / 2**15  # Normalized peak calculation
                 self.pdat.current = peak_normalized  # Adjusted peak storage
@@ -201,7 +203,7 @@ class KBListener(threading.Thread):
             ch = self.getch()
             if ch in ["h", "?"]:
                 print("h: help, f: show filename, k: show peak level, p: show peak")
-                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filtering")
+                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filtering, d: show debug info")
             elif ch == "k":
                 print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")  # Display peak with 2 decimal places
             elif ch == "v":
@@ -219,6 +221,8 @@ class KBListener(threading.Thread):
                 self.pdat.peakflag = pf
             elif ch == "f":
                 if self.pdat.recordflag:
+
+
                     print("Filename: " + self.pdat.processor.filename)
                 else:
                     print("Not recording")
@@ -241,6 +245,11 @@ class KBListener(threading.Thread):
                 self.pdat.filter = not self.pdat.filter
                 state = "enabled" if self.pdat.filter else "disabled"
                 print(f"Filtering {state}")
+            elif ch == "d":
+                notch_freq = self.pdat.debug_info.get('notch_frequency', 'Not determined')
+                print(f"Notch Filter Frequency: {notch_freq}")
+                print(f"Normalization: {'enabled' if self.pdat.normalize else 'disabled'}")
+                print(f"Filtering: {'enabled' if self.pdat.filter else 'disabled'}")
             elif ch == "q":
                 print("Quitting...")
                 self.rstop()
