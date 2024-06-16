@@ -35,6 +35,7 @@ class VoxDat:
         self.raw_data = []
         self.noise_floor_samples = []
         self.noise_floor = 0
+        self.threshold = 0
         self.notch_filter_enabled = False
         self.noise_filter_enabled = False
         self.normalize_audio_enabled = False
@@ -180,8 +181,9 @@ class RecordTimer(threading.Thread):
         nf = nf if nf > 0 else 1
         rf = "*" if self.pdat.recordflag else ""
         noise_floor_normalized = (self.pdat.noise_floor / (2**15 - 1)) * 100
+        threshold_normalized = (self.pdat.threshold / (2**15 - 1)) * 100
         print("\r" + " " * 80 + "\r", end="")
-        print(f"Noise floor: {noise_floor_normalized:.2f}, Current: {self.pdat.current:.2f}, Threshold: {self.pdat.threshold:.2f}{rf}", end="\r")
+        print(f"Noise floor: {noise_floor_normalized:.2f}, Current: {self.pdat.current:.2f}, Threshold: {threshold_normalized:.2f}{rf}", end="\r")
 
 class KBListener(threading.Thread):
     def __init__(self, pdat: VoxDat):
