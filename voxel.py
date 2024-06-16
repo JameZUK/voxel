@@ -169,6 +169,7 @@ class StreamProcessor(threading.Thread):
             self.filename = "No File"
 
 # Class for managing the recording timer
+# Class for managing the recording timer
 class RecordTimer(threading.Thread):
     def __init__(self, pdat: VoxDat):
         threading.Thread.__init__(self)
@@ -191,12 +192,13 @@ class RecordTimer(threading.Thread):
                 if nf <= 0:
                     nf = 1
                 rf = "*" if self.pdat.recordflag else ""
-                print(f"Noise floor: {self.pdat.noise_floor:.2f}, Current: {self.pdat.current:.2f}, Threshold: {self.pdat.threshold}{rf}")
+                print("\r" + " " * 80 + "\r", end="")  # Clear the previous line
+                print(f"Noise floor: {self.pdat.noise_floor:.2f}, Current: {self.pdat.current:.2f}, Threshold: {self.pdat.threshold:.2f}{rf}", end="\r")
             time.sleep(1)
 
     def reset_timer(self, timer: float):
         self.timer = timer
-
+        
 # Class for handling keyboard inputs
 class KBListener(threading.Thread):
     def __init__(self, pdat: VoxDat):
