@@ -66,10 +66,25 @@ def notch_filter(data, freq, fs, quality=30):
     y = lfilter(b, a, data)
     return y
 
-def apply_notch_filter(data, fs, pdat):
+def apply_notch_filter(data, fs):
     dominant_freq = find_dominant_frequency(data, fs)
-    pdat.debug_info['notch_frequency'] = dominant_freq
     return notch_filter(data, dominant_freq, fs)
+
+def normalize_audio(data):
+    peak = np.max(np.abs(data))
+    if peak > 0:
+        normalization_factor = (2**15 - 1) / peak * 0.99
+        data = np.int16(data * normalization_factor)
+    return data
+
+def post_process(filename, devrate, apply_filter=False, apply_normalize=False):
+    data, samplerate = sf.read(filename, dtype='int16')
+    if apply_filter:
+        data = butter_bandpass_filter(data, lowcut=300, highcut=3400, fs=samplerate)
+        data = apply_notch_filter(data, fs=samplerate)
+    if apply_normalize:
+        data = normalize_audio(data)
+    sf.write(filename, data, samplerate)
 
 class StreamProcessor(threading.Thread):
     def __init__(self, pdat: VoxDat):
@@ -80,13 +95,6 @@ class StreamProcessor(threading.Thread):
         self.file = None
         self.filename = "No File"
 
-    def normalize_audio(self, data):
-        peak = np.max(np.abs(data))
-        if peak > 0:
-            normalization_factor = (2**15 - 1) / peak * 0.99
-            data = np.int16(data * normalization_factor)
-        return data
-
     def run(self):
         while self.pdat.running:
             data = self.pdat.samplequeue.get(1)
@@ -94,9 +102,6 @@ class StreamProcessor(threading.Thread):
                 time.sleep(0.1)
             else:
                 data2 = np.frombuffer(data, dtype=np.int16)
-                if self.pdat.filter:
-                    data2 = butter_bandpass_filter(data2, lowcut=300, highcut=3400, fs=self.pdat.devrate)  # Apply bandpass filter
-                    data2 = apply_notch_filter(data2, fs=self.pdat.devrate, pdat=self.pdat)  # Apply notch filter
                 peak = np.max(np.abs(data2))  # Peak calculation
                 peak_normalized = (100 * peak) / 2**15  # Normalized peak calculation
                 self.pdat.current = peak_normalized  # Adjusted peak storage
@@ -119,13 +124,9 @@ class StreamProcessor(threading.Thread):
                                 try:
                                     data3 = self.pdat.preque.get_nowait()
                                     data3 = np.frombuffer(data3, dtype=np.int16)
-                                    if self.pdat.normalize:
-                                        data3 = self.normalize_audio(data3)
                                     self.file.write(data3)
                                 except queue.Empty:
                                     break
-                    if self.pdat.normalize:
-                        data2 = self.normalize_audio(data2)
                     self.file.write(data2)
                 else:
                     if self.pdat.rcnt == self.pdat.saverecs:
@@ -149,6 +150,10 @@ class StreamProcessor(threading.Thread):
             recording_duration = end_time - self.pdat.record_start_time
             print(f"\n{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Closing file {self.filename}")
             print(f"Recording duration: {recording_duration}")
+            if self.pdat.filter or self.pdat.normalize:
+                print(f"\n{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Starting post-processing of {self.filename}")
+                post_process(self.filename, self.pdat.devrate, self.pdat.filter, self.pdat.normalize)
+                print(f"\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Post-processing completed for {self.filename}")
             self.filename = "No File"
 
 class RecordTimer(threading.Thread):
