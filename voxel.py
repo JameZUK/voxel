@@ -46,6 +46,8 @@ class VoxDat:
         self.notch_filter_enabled = False
         self.noise_filter_enabled = False
         self.normalize_audio_enabled = False
+        self.normalize_mode = 'none'
+        self.raw_data = []
 
 # Suppress ALSA errors
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
@@ -110,20 +112,29 @@ class StreamProcessor(threading.Thread):
                     if not self.file:
                         self.filename = self.generate_filename()
                         print("Opening file " + self.filename + "\r")
-                        self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
+                        if self.pdat.normalize_mode == 'on-the-fly':
+                            self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
+                        else:
+                            self.pdat.raw_data = []
                         if self.pdat.rcnt != 0:
                             self.pdat.rcnt = 0
                             while True:
                                 try:
                                     data3 = self.pdat.preque.get_nowait()
                                     data3 = np.frombuffer(data3, dtype=np.int16)
-                                    self.file.write(data3)
+                                    if self.pdat.normalize_mode == 'on-the-fly':
+                                        self.file.write(data3)
+                                    else:
+                                        self.pdat.raw_data.append(data3)
                                 except queue.Empty:
                                     break
-                    if self.pdat.normalize_audio_enabled:
-                        data2 = data2 / np.max(np.abs(data2))
-                        data2 = (data2 * (2**15 - 1)).astype(np.int16)
-                    self.file.write(data2)
+                    if self.pdat.normalize_mode == 'on-the-fly':
+                        if self.pdat.normalize_audio_enabled:
+                            data2 = data2 / np.max(np.abs(data2))
+                            data2 = (data2 * (2**15 - 1)).astype(np.int16)
+                        self.file.write(data2)
+                    else:
+                        self.pdat.raw_data.append(data2)
                 else:
                     if self.pdat.rcnt == self.pdat.saverecs:
                         self.pdat.preque.get_nowait()
@@ -139,6 +150,17 @@ class StreamProcessor(threading.Thread):
         os.makedirs(base_path, exist_ok=True)
         return os.path.join(base_path, now.strftime("%Y%m%d-%H%M%S.flac"))
 
+    def save_recording(self):
+        if self.pdat.normalize_mode == 'post-processing' and self.pdat.raw_data:
+            self.filename = self.generate_filename()
+            data = np.concatenate(self.pdat.raw_data)
+            if self.pdat.normalize_audio_enabled:
+                data = data / np.max(np.abs(data))
+                data = (data * (2**15 - 1)).astype(np.int16)
+            print("Saving file " + self.filename + "\r")
+            sf.write(self.filename, data, self.pdat.devrate, format='FLAC')
+            self.pdat.raw_data = []
+
     def ReadCallback(self, indata, framecount, timeinfo, status):
         self.pdat.samplequeue.put(indata)
         if self.pdat.running:
@@ -151,6 +173,7 @@ class StreamProcessor(threading.Thread):
             self.file.close()
             self.file = None
             self.filename = "No File"
+        self.save_recording()
 
 # Class for managing the recording timer
 class RecordTimer(threading.Thread):
@@ -217,6 +240,7 @@ class KBListener(threading.Thread):
                 print("h: help, f: show filename, k: show peak level, p: show peak")
                 print("q: quit, r: record on/off, v: set trigger level")
                 print("n: toggle normalization, N: toggle noise filter, H: toggle notch filter")
+                print("M: set normalization mode (on-the-fly or post-processing)")
             elif ch == "k":
                 print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")
             elif ch == "v":
@@ -260,6 +284,13 @@ class KBListener(threading.Thread):
                 self.pdat.notch_filter_enabled = not self.pdat.notch_filter_enabled
                 status = "enabled" if self.pdat.notch_filter_enabled else "disabled"
                 print(f"Notch filter {status}")
+            elif ch == "M":
+                new_mode = input("Set normalization mode (on-the-fly or post-processing): ")
+                if new_mode in ['on-the-fly', 'post-processing']:
+                    self.pdat.normalize_mode = new_mode
+                    print(f"Normalization mode set to {new_mode}")
+                else:
+                    print("Invalid mode")
             elif ch == "q":
                 print("Quitting...")
                 self.rstop()
@@ -277,6 +308,7 @@ def display_config(args):
     print(f"  Notch filter: {'enabled' if args.notch else 'disabled'}")
     print(f"  Noise filter: {'enabled' if args.noise else 'disabled'}")
     print(f"  Normalization: {'enabled' if args.normalize else 'disabled'}")
+    print(f"  Normalization mode: {args.normalizemode}")
 
 # Main script execution
 if __name__ == "__main__":
@@ -290,6 +322,7 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--notch", action='store_true', help="Enable notch filter")
     parser.add_argument("-N", "--noise", action='store_true', help="Enable noise filter")
     parser.add_argument("-m", "--normalize", action='store_true', help="Enable normalization")
+    parser.add_argument("--normalizemode", choices=['on-the-fly', 'post-processing'], default='on-the-fly', help="Normalization mode: 'on-the-fly' or 'post-processing' [on-the-fly]")
     args = parser.parse_args()
 
     display_config(args)  # Display configuration before proceeding
@@ -303,6 +336,7 @@ if __name__ == "__main__":
     pdat.notch_filter_enabled = args.notch
     pdat.noise_filter_enabled = args.noise
     pdat.normalize_audio_enabled = args.normalize
+    pdat.normalize_mode = args.normalizemode
 
     with noalsaerr():
         pdat.pyaudio = pyaudio.PyAudio()
