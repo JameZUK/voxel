@@ -313,7 +313,7 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--chunk", type=int, default=8192, help="Chunk size [8192]")
     parser.add_argument("-d", "--devno", type=int, default=2, help="Device number [2]")
     parser.add_argument("-s", "--saverecs", type=int, default=8, help="Records to buffer ahead of threshold [8]")
-    parser.add_argument("-t", "--threshold", type=float, default 1.5, help="Minimum volume threshold factor [1.5]")
+    parser.add_argument("-t", "--threshold", type=float, default=1.5, help="Minimum volume threshold factor [1.5]")
     parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
     parser.add_argument("-n", "--notch", action='store_true', help="Enable notch filter")
     parser.add_argument("-N", "--noise", action='store_true', help="Enable noise filter")
