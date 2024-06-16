@@ -121,11 +121,14 @@ class StreamProcessor(threading.Thread):
                 self.update_noise_floor(data2)
                 if self.filter and self.filter_timing == 'before':
                     data2 = self.apply_filters(data2)
+                
                 peak = np.max(np.abs(data2))
                 peak_normalized = (100 * peak) / 2**15
                 self.pdat.current = peak_normalized
+                
                 if self.pdat.current > self.pdat.threshold:
                     self.rt.reset_timer(time.time())
+                
                 if self.pdat.recordflag:
                     if self.filter and self.filter_timing == 'after':
                         data2 = self.apply_filters(data2)
