@@ -63,18 +63,22 @@ class StreamProcessor(threading.Thread):
         super().__init__(daemon=True)
         self.pdat = pdat
         self.file = None
+        print("StreamProcessor initialized")
 
     def update_noise_floor_and_threshold(self, data):
+        print("Updating noise floor and threshold")
         current_noise = np.mean(np.abs(data))
+        print(f"Current noise: {current_noise}")
         self.pdat.noise_floor_samples.append(current_noise)
         if len(self.pdat.noise_floor_samples) > 100:
             self.pdat.noise_floor_samples.pop(0)
         self.pdat.noise_floor_avg = np.mean(self.pdat.noise_floor_samples)
         self.pdat.noise_floor_std = np.std(self.pdat.noise_floor_samples)
         self.pdat.threshold = self.pdat.noise_floor_avg + (self.pdat.noise_floor_std * self.pdat.threshold_multiplier)
-        print(f"Noise Floor Avg: {self.pdat.noise_floor_avg}, Noise Floor Std: {self.pdat.noise_floor_std}, Threshold: {self.pdat.threshold}\r\n")
+        print(f"Noise Floor Avg: {self.pdat.noise_floor_avg}, Noise Floor Std: {self.pdat.noise_floor_std}, Threshold: {self.pdat.threshold}")
 
     def apply_notch_filter(self, data, fs, freq, quality_factor):
+        print(f"Applying notch filter: fs={fs}, freq={freq}, quality_factor={quality_factor}")
         b, a = iirnotch(freq, quality_factor, fs)
         return lfilter(b, a, data)
 
@@ -86,21 +90,23 @@ class StreamProcessor(threading.Thread):
                 continue
 
             data2 = np.frombuffer(data, dtype=np.int16)
-            print(f"Data2: {data2[:10]}\r\n")  # Print first 10 samples for brevity
-            peak = np.max(np.abs(data2))
-            self.pdat.current = (100 * peak) / MAX_INT16
-            print(f"Peak: {peak}, Current: {self.pdat.current}\r\n")
+            print(f"Processing chunk of data: {data2[:10]}...")
 
             if self.pdat.notch_filter_enabled:
+                print("Notch filter enabled")
                 for freq in [50, 100, 150]:
                     data2 = self.apply_notch_filter(data2, self.pdat.devrate, freq, 30)
 
             self.update_noise_floor_and_threshold(data2)
 
+            peak = np.max(np.abs(data2))
+            self.pdat.current = (100 * peak) / MAX_INT16
+            print(f"Peak: {peak}, Current: {self.pdat.current}")
+
             if self.pdat.current > self.pdat.threshold:
-                print("Recording triggered\r\n")
                 self.pdat.rt.reset_timer(time.time())
                 self.pdat.recordflag = True
+                print("Recording triggered")
             else:
                 self.pdat.recordflag = False
 
@@ -109,27 +115,28 @@ class StreamProcessor(threading.Thread):
                     self._write_data_on_the_fly(data2)
                 else:
                     self.pdat.raw_data.append(data2)
-                if not self.file:
-                    self._open_new_file()
+                print("Data appended to raw_data")
             else:
                 if self.file:
                     self.file.close()
                     self.file = None
-                    print("Recording stopped\r\n")
+                    print("File closed")
 
-            if self.pdat.rcnt == self.pdat.saverecs:
-                self.pdat.preque.get_nowait()
-            else:
-                self.pdat.rcnt += 1
-            self.pdat.preque.put(data)
+                if self.pdat.rcnt == self.pdat.saverecs:
+                    self.pdat.preque.get_nowait()
+                else:
+                    self.pdat.rcnt += 1
+                self.pdat.preque.put(data)
+                print("Data appended to preque")
 
             if self.pdat.show_diagnostics and int(time.time()) % 1 == 0:
                 self._print_diagnostics()
 
     def _print_diagnostics(self):
-        print(f"Noise Floor Avg: {self.pdat.noise_floor_avg:.2f}, Noise Floor Std: {self.pdat.noise_floor_std:.2f}, Threshold: {self.pdat.threshold:.2f}, Current Peak: {self.pdat.current:.2f} (Multiplier: {self.pdat.threshold_multiplier})\r\n")
+        print(f"\rNoise Floor Avg: {self.pdat.noise_floor_avg:.2f}, Noise Floor Std: {self.pdat.noise_floor_std:.2f}, Threshold: {self.pdat.threshold:.2f}, Current Peak: {self.pdat.current:.2f} (Multiplier: {self.pdat.threshold_multiplier})", end="\r")
 
     def _write_data_on_the_fly(self, data):
+        print("Writing data on the fly")
         if not self.file:
             self._open_new_file()
         if self.pdat.normalize_audio_enabled:
@@ -139,7 +146,7 @@ class StreamProcessor(threading.Thread):
 
     def _open_new_file(self):
         self.filename = self._generate_filename()
-        print("\nOpening file " + self.filename + "\r\n")
+        print(f"Opening file {self.filename}")
         self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
 
     def _generate_filename(self):
@@ -155,12 +162,13 @@ class StreamProcessor(threading.Thread):
                 data = data / np.max(np.abs(data))
                 data = (data * MAX_INT16).astype(np.int16)
             self.filename = self._generate_filename()
-            print("\nSaving file " + self.filename + "\r\n")
+            print(f"Saving file {self.filename}")
             sf.write(self.filename, data, self.pdat.devrate, format='FLAC')
             self.pdat.raw_data = []
-            print("Recording saved\r\n")
+            print("Raw data saved and cleared")
 
     def ReadCallback(self, indata, framecount, timeinfo, status):
+        print("ReadCallback triggered")
         self.pdat.samplequeue.put(indata)
         if self.pdat.running:
             return (None, pyaudio.paContinue)
@@ -171,13 +179,16 @@ class StreamProcessor(threading.Thread):
         if self.file:
             self.file.close()
             self.file = None
+            print("File closed in close method")
         self.save_recording()
+        print("Recording saved in close method")
 
 class RecordTimer(threading.Thread):
     def __init__(self, pdat: VoxDat):
         super().__init__(daemon=True)
         self.pdat = pdat
         self.timer = 0
+        print("RecordTimer initialized")
 
     def run(self):
         while self.pdat.running:
@@ -192,39 +203,35 @@ class RecordTimer(threading.Thread):
 
     def reset_timer(self, timer: float):
         self.timer = timer
+        print(f"Timer reset to {self.timer}")
 
     def _display_peak_info(self):
         rf = "*" if self.pdat.recordflag else ""
         noise_floor_normalized = (self.pdat.noise_floor_avg / MAX_INT16) * 100
         threshold_normalized = (self.pdat.threshold / MAX_INT16) * 100
         print("\r" + " " * 80 + "\r", end="")
-        print(f"Noise floor: {noise_floor_normalized:.2f}%, Current: {self.pdat.current:.2f}%, Threshold: {threshold_normalized:.2f}%, (Multiplier: {self.pdat.threshold_multiplier}){rf}\r\n", end="\r")
+        print(f"Noise floor: {noise_floor_normalized:.2f}%, Current: {self.pdat.current:.2f}%, Threshold: {threshold_normalized:.2f}%, (Multiplier: {self.pdat.threshold_multiplier}){rf}", end="\r")
 
 class KBListener(threading.Thread):
     def __init__(self, pdat: VoxDat):
         super().__init__(daemon=True)
         self.pdat = pdat
+        print("KBListener initialized")
 
     def run(self):
         self.pdat.ttyfd = sys.stdin.fileno()
-        self.pdat.ttysettings = termios.tcgetattr(self.pdat.ttyfd)
-        while self.pdat.running:
-            ch = self._getch()
-            self._handle_keypress(ch)
-
-    def _getch(self):
+        self.pdat.old_settings = termios.tcgetattr(self.pdat.ttyfd)
+        tty.setcbreak(self.pdat.ttyfd)
         try:
-            tty.setraw(self.pdat.ttyfd)
-            ch = sys.stdin.read(1)
+            while self.pdat.running:
+                if select.select([sys.stdin], [], [], 0.1)[0]:
+                    ch = sys.stdin.read(1)
+                    self._handle_input(ch)
         finally:
-            self._reset_terminal()
-        return ch
+            termios.tcsetattr(self.pdat.ttyfd, termios.TCSADRAIN, self.pdat.old_settings)
 
-    def _reset_terminal(self):
-        termios.tcsetattr(self.pdat.ttyfd, termios.TCSADRAIN, self.pdat.ttysettings)
-
-    def _handle_keypress(self, ch):
-        if ch in ["h", "?"]:
+    def _handle_input(self, ch):
+        if ch == "h" or ch == "?":
             self._print_help()
         elif ch == "k":
             self._print_peak_info()
@@ -234,168 +241,106 @@ class KBListener(threading.Thread):
             self._print_filename()
         elif ch == "r":
             self._toggle_recording()
-        elif ch == "p":
-            self.pdat.peakflag = not self.pdat.peakflag
-        elif ch == "n":
-            self._toggle_normalization()
-        elif ch == "N":
-            self._toggle_noise_filter()
-        elif ch == "H":
-            self._toggle_notch_filter()
-        elif ch == "M":
-            self._toggle_normalization_mode()
         elif ch == "d":
             self._toggle_diagnostics()
         elif ch == "q":
             self._quit()
 
     def _print_help(self):
-        print("h: help, f: show filename, k: show peak level, p: show peak\r\n")
-        print("q: quit, r: record on/off, v: set threshold multiplier\r\n")
-        print("n: toggle normalization, N: toggle noise filter, H: toggle notch filter\r\n")
-        print("M: toggle normalization mode (fly/post), d: toggle diagnostics\r\n")
+        print("""
+        h,?: Print this help
+        k: Display Peak, Threshold, and Noise floor levels
+        v: Set threshold multiplier (default 0.9)
+        f: Display filename of current recording
+        r: Start/Stop recording
+        d: Toggle diagnostics on/off
+        q: Quit
+        """)
 
     def _print_peak_info(self):
-        print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold:.2f}\r\n")
+        self.pdat.peakflag = True
+        print(f"Threshold: {self.pdat.threshold:.2f}, Noise Floor Avg: {self.pdat.noise_floor_avg:.2f}, Noise Floor Std: {self.pdat.noise_floor_std:.2f}, Current: {self.pdat.current:.2f}")
 
     def _set_threshold_multiplier(self):
-        self._reset_terminal()
-        self.pdat.peakflag = False
-        try:
-            new_multiplier = float(input("New Threshold Multiplier: "))
-        except ValueError:
-            new_multiplier = 0
-        if new_multiplier:
-            self.pdat.threshold_multiplier = new_multiplier
-        else:
-            print("? Number not recognized\r\n")
-        self.pdat.peakflag = True
+        print(f"Current threshold multiplier: {self.pdat.threshold_multiplier}")
+        self.pdat.threshold_multiplier = float(input("Enter new threshold multiplier: "))
 
     def _print_filename(self):
-        if self.pdat.recordflag:
-            print("Filename: " + self.pdat.processor.filename + "\r\n")
-        else:
-            print("Not recording\r\n")
+        print(f"Filename: {self.pdat.processor.filename}")
 
     def _toggle_recording(self):
-        if self.pdat.recordflag:
-            self.pdat.recordflag = False
-            self.pdat.processor.save_recording()
-            print("\nRecording disabled\r\n")
-        else:
-            self.pdat.recordflag = True
-            self.pdat.rt.reset_timer(time.time())
-            print("\nRecording enabled\r\n")
-
-    def _toggle_normalization(self):
-        self.pdat.normalize_audio_enabled = not self.pdat.normalize_audio_enabled
-        status = "enabled" if self.pdat.normalize_audio_enabled else "disabled"
-        print(f"\nNormalization {status}\r\n")
-
-    def _toggle_noise_filter(self):
-        self.pdat.noise_filter_enabled = not self.pdat.noise_filter_enabled
-        status = "enabled" if self.pdat.noise_filter_enabled else "disabled"
-        print(f"\nNoise filter {status}\r\n")
-
-    def _toggle_notch_filter(self):
-        self.pdat.notch_filter_enabled = not self.pdat.notch_filter_enabled
-        status = "enabled" if self.pdat.notch_filter_enabled else "disabled"
-        print(f"\nNotch filter {status}\r\n")
-
-    def _toggle_normalization_mode(self):
-        self.pdat.normalize_mode = 'post' if self.pdat.normalize_mode == 'fly' else 'fly'
-        print(f"\nNormalization mode set to {self.pdat.normalize_mode}\r\n")
+        self.pdat.recordflag = not self.pdat.recordflag
+        status = "started" if self.pdat.recordflag else "stopped"
+        print(f"Recording {status}")
 
     def _toggle_diagnostics(self):
         self.pdat.show_diagnostics = not self.pdat.show_diagnostics
         status = "enabled" if self.pdat.show_diagnostics else "disabled"
-        print(f"\nDiagnostics {status}\r\n")
+        print(f"Diagnostics {status}")
 
     def _quit(self):
-        print("\nQuitting...\r\n")
-        self.pdat.recordflag = False
         self.pdat.running = False
-        self._reset_terminal()
-        time.sleep(0.5)
+        print("Quitting...")
+        self.pdat.processor.close()
 
-def list_audio_devices(pa):
-    print("Available audio devices:\r\n")
-    for i in range(pa.get_device_count()):
-        dev_info = pa.get_device_info_by_index(i)
-        print(f"Device {i}: {dev_info['name']} - Max Input Channels: {dev_info['maxInputChannels']} - Host API: {dev_info['hostApi']}\r\n")
-
-def display_config(args):
-    print("\nCurrent Configuration:\r\n")
-    print(f"  Chunk size: {args.chunk}\r\n")
-    print(f"  Device number: {args.devno}\r\n")
-    print(f"  Records to buffer ahead of threshold: {args.saverecs}\r\n")
-    print(f"  Threshold multiplier: {args.threshold}\r\n")
-    print(f"  Seconds to record after input drops below threshold: {args.hangdelay}\r\n")
-    print(f"  Notch filter: {'enabled' if args.notch else 'disabled'}\r\n")
-    print(f"  Noise filter: {'enabled' if args.noise else 'disabled'}\r\n")
-    print(f"  Normalization: {'enabled' if args.normalize else 'disabled'}\r\n")
-    print(f"  Normalization mode: {args.normalizemode}\r\n")
-
-# Main script execution
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=['record', 'listdevs'], help="'record' or 'listdevs'")
-    parser.add_argument("-c", "--chunk", type=int, default=8192, help="Chunk size [8192]")
-    parser.add_argument("-d", "--devno", type=int, default=2, help="Device number [2]")
-    parser.add_argument("-s", "--saverecs", type=int, default=8, help="Records to buffer ahead of threshold [8]")
-    parser.add_argument("-t", "--threshold", type=float, default=0.9, help="Threshold multiplier [0.9]")
-    parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
-    parser.add_argument("-n", "--notch", action='store_true', help="Enable notch filter")
-    parser.add_argument("-N", "--noise", action='store_true', help="Enable noise filter")
-    parser.add_argument("-m", "--normalize", action='store_true', help="Enable normalization")
-    parser.add_argument("-M", "--normalizemode", choices=['fly', 'post'], default='post', help="Normalization mode: 'fly' or 'post' [fly]")
-    args = parser.parse_args()
-
-    pdat = VoxDat()
-    pdat.devindex = args.devno
-    pdat.threshold_multiplier = args.threshold
-    pdat.saverecs = args.saverecs
-    pdat.hangdelay = args.hangdelay
-    pdat.chunk = args.chunk
-    pdat.notch_filter_enabled = args.notch
-    pdat.noise_filter_enabled = args.noise
-    pdat.normalize_audio_enabled = args.normalize
-    pdat.normalize_mode = args.normalizemode
-
+def init_stream(pdat: VoxDat):
     with noalsaerr():
-        pdat.pyaudio = pyaudio.PyAudio()
+        p = pyaudio.PyAudio()
+        devinfo = p.get_device_info_by_index(pdat.devindex)
+        print(f"Recording from: {devinfo.get('name')}")
+        stream = p.open(format=FORMAT, channels=CHANNELS, rate=int(devinfo["defaultSampleRate"]), input=True, input_device_index=pdat.devindex, frames_per_buffer=pdat.chunk, stream_callback=pdat.processor.ReadCallback)
+        return p, stream
 
-    if args.command == "listdevs":
-        list_audio_devices(pdat.pyaudio)
-    else:
-        display_config(args)
+def parse_args():
+    parser = argparse.ArgumentParser(description="Audio Recorder")
+    parser.add_argument("-c", "--chunk", type=int, default=8192, help="Chunk size for audio processing")
+    parser.add_argument("-d", "--device", type=int, default=1, help="Audio device number")
+    parser.add_argument("-s", "--saverecs", type=int, default=8, help="Number of records to buffer ahead of threshold")
+    parser.add_argument("-m", "--multiplier", type=float, default=0.9, help="Threshold multiplier for recording trigger")
+    parser.add_argument("-t", "--threshold", type=float, help="Manual threshold override")
+    parser.add_argument("-n", "--normalize", action="store_true", help="Enable normalization of audio")
+    parser.add_argument("-x", "--notchfilter", action="store_true", help="Enable notch filter for audio")
+    parser.add_argument("-f", "--file", type=str, help="Output file path")
+    parser.add_argument("-r", "--rate", type=int, default=44100, help="Sampling rate")
+    parser.add_argument("-q", "--quality", type=int, default=30, help="Notch filter quality factor")
+    parser.add_argument("-g", "--debug", action="store_true", help="Show diagnostic information")
+    return parser.parse_args()
 
-        dev_info = pdat.pyaudio.get_device_info_by_index(pdat.devindex)
-        if dev_info['maxInputChannels'] < CHANNELS:
-            print(f"Error: Device {pdat.devindex} does not support {CHANNELS} channel(s). Please select a valid device.\r\n")
-            list_audio_devices(pdat.pyaudio)
-            sys.exit(1)
+def main():
+    args = parse_args()
+    pdat = VoxDat()
+    pdat.chunk = args.chunk
+    pdat.devindex = args.device
+    pdat.saverecs = args.saverecs
+    pdat.threshold_multiplier = args.multiplier
+    pdat.devrate = args.rate
+    pdat.normalize_audio_enabled = args.normalize
+    pdat.notch_filter_enabled = args.notchfilter
+    pdat.show_diagnostics = args.debug
+    if args.threshold:
+        pdat.threshold = args.threshold
 
-        pdat.devrate = int(dev_info.get('defaultSampleRate'))
-        pdat.running = True
-        pdat.rt = RecordTimer(pdat)
-        pdat.processor = StreamProcessor(pdat)
-        pdat.processor.start()
-        pdat.rt.start()
+    pdat.running = True
+    pdat.processor = StreamProcessor(pdat)
+    pdat.rt = RecordTimer(pdat)
+    pdat.kb = KBListener(pdat)
 
-        pdat.devstream = pdat.pyaudio.open(format=FORMAT,
-                                           channels=CHANNELS,
-                                           rate=pdat.devrate,
-                                           input=True,
-                                           input_device_index=pdat.devindex,
-                                           frames_per_buffer=pdat.chunk,
-                                           stream_callback=pdat.processor.ReadCallback)
-        pdat.devstream.start_stream()
+    pdat.processor.start()
+    pdat.rt.start()
+    pdat.kb.start()
 
-        pdat.km = KBListener(pdat)
-        pdat.km.start()
+    p, stream = init_stream(pdat)
 
+    try:
         while pdat.running:
             time.sleep(1)
+    except KeyboardInterrupt:
+        pdat.running = False
+        pdat.processor.close()
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        print("\nRecording stopped.")
 
-    print("\nDone.\r\n")
+if __name__ == "__main__":
+    main()
