@@ -113,6 +113,13 @@ class StreamProcessor(threading.Thread):
                     self.pdat.rcnt += 1
                 self.pdat.preque.put(data)
 
+            # Print diagnostic information every second
+            if int(time.time()) % 1 == 0:
+                self._print_diagnostics()
+
+    def _print_diagnostics(self):
+        print(f"Noise Floor: {self.pdat.noise_floor:.2f}, Threshold: {self.pdat.threshold:.2f}, Current Peak: {self.pdat.current:.2f}")
+
     def _write_data_on_the_fly(self, data):
         if not self.file:
             self._open_new_file()
@@ -181,7 +188,7 @@ class RecordTimer(threading.Thread):
         noise_floor_normalized = (self.pdat.noise_floor / MAX_INT16) * 100
         threshold_normalized = (self.pdat.threshold / MAX_INT16) * 100
         print("\r" + " " * 80 + "\r", end="")
-        print(f"Noise floor: {noise_floor_normalized:.2f}, Current: {self.pdat.current:.2f}, Threshold: {threshold_normalized:.2f}{rf}", end="\r")
+        print(f"Noise floor: {noise_floor_normalized:.2f}%, Current: {self.pdat.current:.2f}%, Threshold: {threshold_normalized:.2f}%{rf}", end="\r")
 
 class KBListener(threading.Thread):
     def __init__(self, pdat: VoxDat):
