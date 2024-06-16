@@ -112,12 +112,14 @@ class StreamProcessor(threading.Thread):
                 print("Recording not triggered")
 
             if self.pdat.recordflag:
+                print("Recording flag is true")
                 if self.pdat.normalize_mode == 'fly':
                     self._write_data_on_the_fly(data2)
                 else:
                     self.pdat.raw_data.append(data2)
                 print("Data appended to raw_data")
             else:
+                print("Recording flag is false")
                 if self.file:
                     self.file.close()
                     self.file = None
