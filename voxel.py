@@ -119,6 +119,7 @@ class StreamProcessor(threading.Thread):
             else:
                 data2 = np.frombuffer(data, dtype=np.int16)
                 self.update_noise_floor(data2)
+                
                 if self.filter and self.filter_timing == 'before':
                     data2 = self.apply_filters(data2)
                 
@@ -257,7 +258,7 @@ class KBListener(threading.Thread):
                 else:
                     print("Not recording")
             elif ch == "r":
-                if self.pdat.recordflag:
+                if (self.pdat.recordflag):
                     self.rstop()
                     print("Recording disabled")
                 else:
