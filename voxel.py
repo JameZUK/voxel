@@ -109,6 +109,7 @@ class StreamProcessor(threading.Thread):
                 print("Recording triggered")
             else:
                 self.pdat.recordflag = False
+                print("Recording not triggered")
 
             if self.pdat.recordflag:
                 if self.pdat.normalize_mode == 'fly':
@@ -210,16 +211,18 @@ class RecordTimer(threading.Thread):
         noise_floor_normalized = (self.pdat.noise_floor_avg / MAX_INT16) * 100
         threshold_normalized = (self.pdat.threshold / MAX_INT16) * 100
         print("\r" + " " * 80 + "\r", end="")
-        print(f"Noise floor: {noise_floor_normalized:.2f}%, Current: {self.pdat.current:.2f}%, Threshold: {threshold_normalized:.2f}%, (Multiplier: {self.pdat.threshold_multiplier}){rf}", end="\r")
+        print(f"Noise floor: {noise_floor_normalized:.2f} Threshold: {threshold_normalized:.2f} Peak: {self.pdat.current:.2f} {rf}", end="\r")
 
 class KBListener(threading.Thread):
     def __init__(self, pdat: VoxDat):
         super().__init__(daemon=True)
         self.pdat = pdat
+        self.pdat.ttyfd = sys.stdin.fileno()
+        self.pdat.old_settings = termios.tcgetattr(self.pdat.ttyfd)
+        tty.setcbreak(self.pdat.ttyfd)
         print("KBListener initialized")
 
     def run(self):
-        self.pdat.ttyfd = sys.stdin.fileno()
         self.pdat.old_settings = termios.tcgetattr(self.pdat.ttyfd)
         tty.setcbreak(self.pdat.ttyfd)
         try:
