@@ -11,7 +11,7 @@ import numpy as np
 import queue
 import soundfile as sf
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from scipy.signal import butter, lfilter, iirnotch
 
 FORMAT = pyaudio.paInt16
@@ -24,6 +24,7 @@ class VoxDat:
         self.rt = self.km = self.ttysettings = self.ttyfd = self.pyaudio = self.devstream = self.processor = None
         self.preque = self.samplequeue = None
         self.debug_info = {}
+        self.record_start_time = None
 
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
 
@@ -102,13 +103,14 @@ class StreamProcessor(threading.Thread):
                     self.rt.reset_timer(time.time())
                 if self.pdat.recordflag:
                     if not self.file:
-                        now = datetime.now()
+                        self.pdat.record_start_time = datetime.now()
+                        now = self.pdat.record_start_time
                         month_folder = now.strftime("%Y-%m")
                         week_folder = now.strftime("Week_%U")
                         directory = os.path.join("recordings", month_folder, week_folder)
                         os.makedirs(directory, exist_ok=True)
                         self.filename = os.path.join(directory, now.strftime("%Y%m%d-%H%M%S.flac"))
-                        print("opening file " + self.filename + "\r")
+                        print(f"{now.strftime('%Y-%m-%d %H:%M:%S')} - Opening file {self.filename}")
                         self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
                         if self.pdat.rcnt != 0:
                             self.pdat.rcnt = 0
@@ -142,6 +144,10 @@ class StreamProcessor(threading.Thread):
         if self.file:
             self.file.close()
             self.file = None
+            end_time = datetime.now()
+            recording_duration = end_time - self.pdat.record_start_time
+            print(f"{end_time.strftime('%Y-%m-%d %H:%M:%S')} - Closing file {self.filename}")
+            print(f"Recording duration: {recording_duration}")
             self.filename = "No File"
 
 class RecordTimer(threading.Thread):
@@ -155,9 +161,14 @@ class RecordTimer(threading.Thread):
         while self.pdat.running:
             if time.time() - self.timer < self.pdat.hangdelay:
                 self.pdat.recordflag = True
+                if self.pdat.record_start_time is None:
+                    self.pdat.record_start_time = datetime.now()
+                    print(f"{self.pdat.record_start_time.strftime('%Y-%m-%d %H:%M:%S')} - Recording started")
             if time.time() - self.timer > self.pdat.hangdelay + 1:
-                self.pdat.recordflag = False
-                self.pdat.processor.close()
+                if self.pdat.recordflag:
+                    self.pdat.recordflag = False
+                    self.pdat.processor.close()
+                    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording stopped")
             if self.pdat.peakflag:
                 nf = min(int(self.pdat.current), 99)  # Ensure nf is an integer
                 nf2 = nf
@@ -227,12 +238,12 @@ class KBListener(threading.Thread):
             elif ch == "r":
                 if self.pdat.recordflag:
                     self.rstop()
-                    print("Recording disabled")
+                    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording disabled")
                 else:
                     self.pdat.recordflag = True
                     self.pdat.threshold = 0.3  # Adjusted default threshold
                     self.pdat.rt.reset_timer(time.time())
-                    print("Recording enabled")
+                    print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording enabled")
             elif ch == "p":
                 self.pdat.peakflag = not self.pdat.peakflag
             elif ch == "n":
@@ -317,6 +328,7 @@ else:
     pdat.km.start()
 
     while pdat.running:
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Listening...")
         time.sleep(1)
 
 print("Done.")
