@@ -10,7 +10,6 @@ import time
 import numpy as np
 import queue
 import soundfile as sf
-from scipy.signal import butter, lfilter, iirnotch
 
 # Audio settings
 FORMAT = pyaudio.paInt16
@@ -54,55 +53,15 @@ def noalsaerr():
     yield
     asound.snd_lib_error_set_handler(None)
 
-# Audio filter functions
-def butter_bandpass(lowcut, highcut, fs, order=5):
-    nyq = 0.5 * fs
-    low = lowcut / nyq
-    high = highcut / nyq
-    b, a = butter(order, [low, high], btype='band')
-    return b, a
-
-def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
-    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
-    y = lfilter(b, a, data)
-    return y
-
-def notch_filter(data, freq, fs, quality=30):
-    nyq = 0.5 * fs
-    norm_freq = freq / nyq
-    b, a = iirnotch(norm_freq, quality)
-    y = lfilter(b, a, data)
-    return y
-
-def apply_notch_filters(data, fs):
-    for freq in [50, 100, 150, 60, 120, 180]:
-        data = notch_filter(data, freq, fs)
-    return data
-
 # Class for processing audio stream
 class StreamProcessor(threading.Thread):
-    def __init__(self, pdat: VoxDat, normalize: bool, filter: bool, filter_timing: str):
+    def __init__(self, pdat: VoxDat):
         threading.Thread.__init__(self)
         self.daemon = True
         self.pdat = pdat
         self.rt = self.pdat.rt
         self.file = None
         self.filename = "No File"
-        self.normalize = normalize
-        self.filter = filter
-        self.filter_timing = filter_timing
-
-    def normalize_audio(self, data):
-        peak = np.max(np.abs(data))
-        if peak > 0:
-            normalization_factor = (2**15 - 1) / peak * 0.99
-            data = np.int16(data * normalization_factor)
-        return data
-
-    def apply_filters(self, data):
-        data = butter_bandpass_filter(data, lowcut=300, highcut=3400, fs=self.pdat.devrate)
-        data = apply_notch_filters(data, fs=self.pdat.devrate)
-        return data
 
     def update_noise_floor(self, data):
         current_noise = np.mean(np.abs(data))
@@ -119,27 +78,15 @@ class StreamProcessor(threading.Thread):
             else:
                 data2 = np.frombuffer(data, dtype=np.int16)
                 self.update_noise_floor(data2)
-
-                # Apply filters if needed before normalization
-                if self.filter and self.filter_timing == 'before':
-                    data2 = self.apply_filters(data2)
-
+                
                 peak = np.max(np.abs(data2))
                 peak_normalized = (100 * peak) / 2**15
                 self.pdat.current = peak_normalized
-
+                
                 if self.pdat.current > self.pdat.threshold:
                     self.rt.reset_timer(time.time())
-
+                
                 if self.pdat.recordflag:
-                    # Apply filters if needed after normalization
-                    if self.filter and self.filter_timing == 'after':
-                        data2 = self.apply_filters(data2)
-
-                    # Normalize audio if required
-                    if self.normalize:
-                        data2 = self.normalize_audio(data2)
-
                     if not self.file:
                         self.filename = time.strftime("%Y%m%d-%H%M%S.flac")
                         print("Opening file " + self.filename + "\r")
@@ -150,12 +97,6 @@ class StreamProcessor(threading.Thread):
                                 try:
                                     data3 = self.pdat.preque.get_nowait()
                                     data3 = np.frombuffer(data3, dtype=np.int16)
-                                    # Apply filters if needed before normalization
-                                    if self.filter and self.filter_timing == 'before':
-                                        data3 = self.apply_filters(data3)
-                                    # Normalize audio if required
-                                    if self.normalize:
-                                        data3 = self.normalize_audio(data3)
                                     self.file.write(data3)
                                 except queue.Empty:
                                     break
@@ -243,7 +184,7 @@ class KBListener(threading.Thread):
             ch = self.getch()
             if ch in ["h", "?"]:
                 print("h: help, f: show filename, k: show peak level, p: show peak")
-                print("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filter, T: toggle filter timing (before/after)")
+                print("q: quit, r: record on/off, v: set trigger level")
             elif ch == "k":
                 print(f"Peak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}")
             elif ch == "v":
@@ -275,17 +216,6 @@ class KBListener(threading.Thread):
                     print("Recording enabled")
             elif ch == "p":
                 self.pdat.peakflag = not self.pdat.peakflag
-            elif ch == "n":
-                self.pdat.processor.normalize = not self.pdat.processor.normalize
-                state = "enabled" if self.pdat.processor.normalize else "disabled"
-                print(f"Normalization {state}")
-            elif ch == "F":
-                self.pdat.processor.filter = not self.pdat.processor.filter
-                state = "enabled" if self.pdat.processor.filter else "disabled"
-                print(f"Filtering {state}")
-            elif ch == "T":
-                self.pdat.processor.filter_timing = 'after' if self.pdat.processor.filter_timing == 'before' else 'before'
-                print(f"Filter timing: {self.pdat.processor.filter_timing}")
             elif ch == "q":
                 print("Quitting...")
                 self.rstop()
@@ -300,9 +230,6 @@ def display_config(args):
     print(f"  Records to buffer ahead of threshold: {args.saverecs}")
     print(f"  Minimum volume threshold: {args.threshold}")
     print(f"  Seconds to record after input drops below threshold: {args.hangdelay}")
-    print(f"  Normalize audio: {'enabled' if args.normalize else 'disabled'}")
-    print(f"  Apply filtering to audio: {'enabled' if args.filter else 'disabled'}")
-    print(f"  Filter timing: {args.filter_timing}\n")
 
 # Main script execution
 if __name__ == "__main__":
@@ -313,9 +240,6 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--saverecs", type=int, default=8, help="Records to buffer ahead of threshold [8]")
     parser.add_argument("-t", "--threshold", type=float, default=0.3, help="Minimum volume threshold (0.1-99) [0.3]")
     parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to record after input drops below threshold [6]")
-    parser.add_argument("-n", "--normalize", action="store_true", help="Normalize audio [False]")
-    parser.add_argument("-F", "--filter", action="store_true", help="Apply filtering to audio [False]")
-    parser.add_argument("--filter-timing", choices=['before', 'after'], default='before', help="When to apply filtering: before or after peak detection [before]")
     args = parser.parse_args()
 
     display_config(args)  # Display configuration before proceeding
@@ -341,7 +265,7 @@ if __name__ == "__main__":
 
         pdat.running = True
         pdat.rt = RecordTimer(pdat)
-        pdat.processor = StreamProcessor(pdat, normalize=args.normalize, filter=args.filter, filter_timing=args.filter_timing)
+        pdat.processor = StreamProcessor(pdat)
         pdat.processor.start()
         pdat.rt.start()
 
