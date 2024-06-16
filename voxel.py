@@ -310,7 +310,7 @@ if __name__ == "__main__":
     parser.add_argument("--filter-timing", choices=['before', 'after'], default='before', help="When to apply filtering: before or after peak detection [before]")
     args = parser.parse_args()
 
-    display_config(args)
+    display_config(args)  # Display configuration before proceeding
 
     pdat = VoxDat()
     pdat.devindex = args.devno
