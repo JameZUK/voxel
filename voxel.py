@@ -68,7 +68,8 @@ class StreamProcessor(threading.Thread):
         if len(self.pdat.noise_floor_samples) > 100:
             self.pdat.noise_floor_samples.pop(0)
         self.pdat.noise_floor = np.mean(self.pdat.noise_floor_samples)
-        self.pdat.threshold = (self.pdat.noise_floor / MAX_INT16) * 100 * self.pdat.threshold_factor
+        # Ensure threshold is scaled correctly
+        self.pdat.threshold = self.pdat.noise_floor * self.pdat.threshold_factor
 
     def apply_notch_filter(self, data, fs, freq, quality_factor):
         b, a = iirnotch(freq, quality_factor, fs)
@@ -179,8 +180,9 @@ class RecordTimer(threading.Thread):
     def _display_peak_info(self):
         rf = "*" if self.pdat.recordflag else ""
         noise_floor_normalized = (self.pdat.noise_floor / MAX_INT16) * 100
+        threshold_normalized = (self.pdat.threshold / MAX_INT16) * 100
         print("\r" + " " * 80 + "\r", end="")
-        print(f"Noise floor: {noise_floor_normalized:.2f}, Current: {self.pdat.current:.2f}, Threshold: {self.pdat.threshold:.2f}{rf}", end="\r")
+        print(f"Noise floor: {noise_floor_normalized:.2f}, Current: {self.pdat.current:.2f}, Threshold: {threshold_normalized:.2f}{rf}", end="\r")
 
 class KBListener(threading.Thread):
     def __init__(self, pdat: VoxDat):
