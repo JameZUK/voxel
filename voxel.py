@@ -132,25 +132,7 @@ class StreamProcessor(threading.Thread):
                     self.rt.reset_timer(time.time())
                 if self.pdat.recordflag:
                     if not self.file:
-                        self.pdat.record_start_time = datetime.now()
-                        now = self.pdat.record_start_time
-                        month_folder = now.strftime("%Y-%m")
-                        week_folder = now.strftime("Week_%U")
-                        directory = os.path.join("recordings", month_folder, week_folder)
-                        os.makedirs(directory, exist_ok=True)
-                        self.filename = os.path.join(directory, now.strftime("%Y%m%d-%H%M%S.flac"))
-                        sys.stdout.write(f"{now.strftime('%Y-%m-%d %H:%M:%S')} - Opening file {self.filename}\n")
-                        sys.stdout.flush()
-                        self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
-                        if self.pdat.rcnt != 0:
-                            self.pdat.rcnt = 0
-                            while True:
-                                try:
-                                    data3 = self.pdat.preque.get_nowait()
-                                    data3 = np.frombuffer(data3, dtype=np.int16)
-                                    self.file.write(data3)
-                                except queue.Empty:
-                                    break
+                        self.open_new_file()
                     self.file.write(data2)
                 else:
                     if self.pdat.rcnt == self.pdat.saverecs:
@@ -158,7 +140,28 @@ class StreamProcessor(threading.Thread):
                     else:
                         self.pdat.rcnt += 1
                     self.pdat.preque.put(data)
-             
+
+    def open_new_file(self):
+        self.pdat.record_start_time = datetime.now()
+        now = self.pdat.record_start_time
+        month_folder = now.strftime("%Y-%m")
+        week_folder = now.strftime("Week_%U")
+        directory = os.path.join("recordings", month_folder, week_folder)
+        os.makedirs(directory, exist_ok=True)
+        self.filename = os.path.join(directory, now.strftime("%Y%m%d-%H%M%S.flac"))
+        sys.stdout.write(f"{now.strftime('%Y-%m-%d %H:%M:%S')} - Opening file {self.filename}\n")
+        sys.stdout.flush()
+        self.file = sf.SoundFile(self.filename, mode='w', samplerate=self.pdat.devrate, channels=CHANNELS, format='FLAC')
+        if self.pdat.rcnt != 0:
+            self.pdat.rcnt = 0
+            while True:
+                try:
+                    data3 = self.pdat.preque.get_nowait()
+                    data3 = np.frombuffer(data3, dtype=np.int16)
+                    self.file.write(data3)
+                except queue.Empty:
+                    break
+
     def ReadCallback(self, indata, framecount, timeinfo, status):
         self.pdat.samplequeue.put(indata)
         if self.pdat.running:
