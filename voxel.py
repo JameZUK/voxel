@@ -27,6 +27,7 @@ class VoxDat:
         self.record_start_time = None
         self.listening = False
         self.harmonics = 4  # Default number of harmonics to filter
+        self.root_path = "recordings"
 
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
 
@@ -146,7 +147,7 @@ class StreamProcessor(threading.Thread):
         now = self.pdat.record_start_time
         month_folder = now.strftime("%Y-%m")
         week_folder = now.strftime("Week_%U")
-        directory = os.path.join("recordings", month_folder, week_folder)
+        directory = os.path.join(self.pdat.root_path, month_folder, week_folder)
         os.makedirs(directory, exist_ok=True)
         self.filename = os.path.join(directory, now.strftime("%Y%m%d-%H%M%S.flac"))
         sys.stdout.write(f"{now.strftime('%Y-%m-%d %H:%M:%S')} - Opening file {self.filename}\n")
@@ -324,6 +325,7 @@ parser.add_argument("-l", "--hangdelay", type=int, default=6, help="Seconds to r
 parser.add_argument("-n", "--normalize", action="store_true", help="Normalize audio [False]")
 parser.add_argument("-F", "--filter", action="store_true", help="Apply filtering to audio [False]")
 parser.add_argument("--harmonics", type=int, default=4, help="Number of harmonics to apply notch filter [4]")
+parser.add_argument("--rootpath", type=str, default="recordings", help="Root path for storing recordings [recordings]")
 args = parser.parse_args()
 pdat = VoxDat()
 
@@ -335,6 +337,7 @@ pdat.chunk = args.chunk
 pdat.normalize = args.normalize
 pdat.filter = args.filter
 pdat.harmonics = args.harmonics
+pdat.root_path = args.rootpath
 
 with noalsaerr():
     pdat.pyaudio = pyaudio.PyAudio()
