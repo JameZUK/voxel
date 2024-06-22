@@ -28,6 +28,7 @@ class VoxDat:
         self.listening = False
         self.harmonics = 4  # Default number of harmonics to filter
         self.root_path = "recordings"
+        self.max_recording_length = 0  # Maximum recording length in seconds
 
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
 
@@ -132,7 +133,9 @@ class StreamProcessor(threading.Thread):
                 if self.pdat.current > self.pdat.threshold:
                     self.rt.reset_timer(time.time())
                 if self.pdat.recordflag:
-                    if not self.file:
+                    if not self.file or self.is_max_length_reached():
+                        if self.file:
+                            self.close()
                         self.open_new_file()
                     self.file.write(data2)
                 else:
@@ -141,6 +144,12 @@ class StreamProcessor(threading.Thread):
                     else:
                         self.pdat.rcnt += 1
                     self.pdat.preque.put(data)
+
+    def is_max_length_reached(self):
+        if self.pdat.max_recording_length <= 0:
+            return False
+        current_duration = datetime.now() - self.pdat.record_start_time
+        return current_duration.total_seconds() >= self.pdat.max_recording_length
 
     def open_new_file(self):
         self.pdat.record_start_time = datetime.now()
@@ -326,6 +335,7 @@ parser.add_argument("-n", "--normalize", action="store_true", help="Normalize au
 parser.add_argument("-F", "--filter", action="store_true", help="Apply filtering to audio [False]")
 parser.add_argument("--harmonics", type=int, default=4, help="Number of harmonics to apply notch filter [4]")
 parser.add_argument("--rootpath", type=str, default="recordings", help="Root path for storing recordings [recordings]")
+parser.add_argument("--maxlength", type=int, default=0, help="Maximum recording length in minutes [0 = unlimited]")
 args = parser.parse_args()
 pdat = VoxDat()
 
@@ -338,6 +348,7 @@ pdat.normalize = args.normalize
 pdat.filter = args.filter
 pdat.harmonics = args.harmonics
 pdat.root_path = args.rootpath
+pdat.max_recording_length = args.maxlength * 60  # Convert minutes to seconds
 
 with noalsaerr():
     pdat.pyaudio = pyaudio.PyAudio()
