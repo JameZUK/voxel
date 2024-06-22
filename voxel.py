@@ -257,72 +257,76 @@ class KBListener(threading.Thread):
         self.pdat.processor.close()
 
     def run(self):
-        self.pdat.ttyfd = sys.stdin.fileno()
-        self.pdat.ttysettings = termios.tcgetattr(self.pdat.ttyfd)
+        # Check if running in an interactive environment
+        interactive = sys.stdout.isatty()
+        if interactive:
+            self.pdat.ttyfd = sys.stdin.fileno()
+            self.pdat.ttysettings = termios.tcgetattr(self.pdat.ttyfd)
         while self.pdat.running:
-            ch = self.getch()
-            if ch in ["h", "?"]:
-                sys.stdout.write("\nh: help, f: show filename, k: show peak level, p: show peak\n")
-                sys.stdout.write("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filtering, d: show debug info\n")
-                sys.stdout.flush()
-            elif ch == "k":
-                sys.stdout.write(f"\nPeak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}\n")
-                sys.stdout.flush()
-            elif ch == "v":
-                self.treset()
-                pf = self.pdat.peakflag
-                self.pdat.peakflag = False
-                try:
-                    newpeak = float(input("\nNew Peak Limit: "))
-                except ValueError:
-                    newpeak = 0
-                if newpeak == 0:
-                    sys.stdout.write("\n? Number not recognized\n")
+            if interactive:
+                ch = self.getch()
+                if ch in ["h", "?"]:
+                    sys.stdout.write("\nh: help, f: show filename, k: show peak level, p: show peak\n")
+                    sys.stdout.write("q: quit, r: record on/off, v: set trigger level, n: toggle normalization, F: toggle filtering, d: show debug info\n")
                     sys.stdout.flush()
-                else:
-                    self.pdat.threshold = newpeak
-                self.pdat.peakflag = pf
-            elif ch == "f":
-                if self.pdat.recordflag:
-                    sys.stdout.write(f"\nFilename: {self.pdat.processor.filename}\n")
+                elif ch == "k":
+                    sys.stdout.write(f"\nPeak/Trigger: {self.pdat.current:.2f} {self.pdat.threshold}\n")
                     sys.stdout.flush()
-                else:
-                    sys.stdout.write("\nNot recording\n")
+                elif ch == "v":
+                    self.treset()
+                    pf = self.pdat.peakflag
+                    self.pdat.peakflag = False
+                    try:
+                        newpeak = float(input("\nNew Peak Limit: "))
+                    except ValueError:
+                        newpeak = 0
+                    if newpeak == 0:
+                        sys.stdout.write("\n? Number not recognized\n")
+                        sys.stdout.flush()
+                    else:
+                        self.pdat.threshold = newpeak
+                    self.pdat.peakflag = pf
+                elif ch == "f":
+                    if self.pdat.recordflag:
+                        sys.stdout.write(f"\nFilename: {self.pdat.processor.filename}\n")
+                        sys.stdout.flush()
+                    else:
+                        sys.stdout.write("\nNot recording\n")
+                        sys.stdout.flush()
+                elif ch == "r":
+                    if self.pdat.recordflag:
+                        self.rstop()
+                        sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording disabled\n")
+                        sys.stdout.flush()
+                    else:
+                        self.pdat.recordflag = True
+                        self.pdat.threshold = 0.3
+                        self.pdat.rt.reset_timer(time.time())
+                        sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording enabled\n")
+                        sys.stdout.flush()
+                elif ch == "p":
+                    self.pdat.peakflag = not self.pdat.peakflag
+                elif ch == "n":
+                    self.pdat.normalize = not self.pdat.normalize
+                    state = "enabled" if self.pdat.normalize else "disabled"
+                    sys.stdout.write(f"\nNormalization {state}\n")
                     sys.stdout.flush()
-            elif ch == "r":
-                if self.pdat.recordflag:
+                elif ch == "F":
+                    self.pdat.filter = not self.pdat.filter
+                    state = "enabled" if self.pdat.filter else "disabled"
+                    sys.stdout.write(f"\nFiltering {state}\n")
+                    sys.stdout.flush()
+                elif ch == "d":
+                    sys.stdout.write(f"\nNormalization: {'enabled' if self.pdat.normalize else 'disabled'}\n")
+                    sys.stdout.write(f"Filtering: {'enabled' if self.pdat.filter else 'disabled'}\n")
+                    sys.stdout.flush()
+                elif ch == "q":
+                    sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Quitting...\n")
+                    sys.stdout.flush()
                     self.rstop()
-                    sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording disabled\n")
-                    sys.stdout.flush()
-                else:
-                    self.pdat.recordflag = True
-                    self.pdat.threshold = 0.3
-                    self.pdat.rt.reset_timer(time.time())
-                    sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Recording enabled\n")
-                    sys.stdout.flush()
-            elif ch == "p":
-                self.pdat.peakflag = not self.pdat.peakflag
-            elif ch == "n":
-                self.pdat.normalize = not self.pdat.normalize
-                state = "enabled" if self.pdat.normalize else "disabled"
-                sys.stdout.write(f"\nNormalization {state}\n")
-                sys.stdout.flush()
-            elif ch == "F":
-                self.pdat.filter = not self.pdat.filter
-                state = "enabled" if self.pdat.filter else "disabled"
-                sys.stdout.write(f"\nFiltering {state}\n")
-                sys.stdout.flush()
-            elif ch == "d":
-                sys.stdout.write(f"\nNormalization: {'enabled' if self.pdat.normalize else 'disabled'}\n")
-                sys.stdout.write(f"Filtering: {'enabled' if self.pdat.filter else 'disabled'}\n")
-                sys.stdout.flush()
-            elif ch == "q":
-                sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Quitting...\n")
-                sys.stdout.flush()
-                self.rstop()
-                self.pdat.running = False
-                self.treset()
-                time.sleep(0.5)
+                    self.pdat.running = False
+                    self.treset()
+                    time.sleep(0.5)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("command", choices=['record', 'listdevs'], help="'record' or 'listdevs'")
