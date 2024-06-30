@@ -1,63 +1,111 @@
-# voxel
-command-line voice-activated recorder.
+Voxel Recorder
 
-This is a voice-activated recorder with a command line interface only (no GUI). When it's running it accepts single-letter commands:
-* h - Print some help
-* f - Print the current recording filename
-* k - Print the peak and trigger levels
-* q - Quit
-* p - Start or stop the peak level meter
-* r - Turn recording on/off
-* v - Set the sound trigger level. You'll be prompted for a peak level
+Voxel Recorder is a versatile audio recording and processing utility designed for both interactive and non-interactive environments. It supports real-time audio input, signal processing, and various user-defined configurations to tailor the recording process to your needs. The script is built with Python and leverages several powerful libraries such as pyaudio, numpy, and scipy for high-quality audio processing.
+Features
 
-Help for the command-line interface
+    Real-time audio recording with configurable device selection and chunk size.
+    Volume threshold-based recording to trigger recording based on audio input levels.
+    Automatic post-processing with options for normalization and filtering.
+    Dynamic folder structure for organizing recordings by month and week.
+    Maximum recording length to prevent long continuous recordings, automatically stopping and starting new recordings as needed.
+    Keyboard input handling for interactive control of recording parameters (only in interactive mode).
 
-usage: voxel.py COMMAND [-h] [-c CHUNK] [-d DEVNO] [-s SAVERECS] [-t THRESHOLD] [-l HANGDELAY]
+Command Line Options
 
-COMMAND is: 'record' to enter record mode or 'listdevs' to list the sound devices
+    command (required): The main command to run. Options are:
+        record: Start recording audio.
+        listdevs: List available audio devices.
+    -c, --chunk (optional): Chunk size for audio processing. Default is 8192.
+    -d, --devno (optional): Device number for audio input. Default is 2.
+    -s, --saverecs (optional): Number of records to buffer ahead of threshold. Default is 8.
+    -t, --threshold (optional): Minimum volume threshold to trigger recording (0.1-99). Default is 0.3.
+    -l, --hangdelay (optional): Seconds to continue recording after input drops below threshold. Default is 6.
+    -n, --normalize (optional): Normalize audio (enabled with this flag).
+    -F, --filter (optional): Apply filtering to audio (enabled with this flag).
+    --harmonics (optional): Number of harmonics to apply notch filter. Default is 4.
+    --rootpath (optional): Root path for storing recordings. Default is recordings.
+    --maxlength (optional): Maximum recording length in minutes. Default is 0 (unlimited).
 
-    Requires Python3 and the modules python3-pyaudio python3-numpy libasound2-dev
-    
-    With thanks to https://github.com/russinnes/py-vox-recorder, on which this code is loosely based.
+Usage
+Listing Audio Devices
 
-Summary of Changes:
+To list available audio devices:
 
-    Filtering Functions:
-        butter_highpass, butter_lowpass, butter_highpass_filter, butter_lowpass_filter: Implemented high-pass and low-pass filters.
-        notch_filter: Implemented a notch filter to target specific frequencies (e.g., mains hum at 50 Hz and 60 Hz).
+bash
 
-    Normalization and Filtering:
-        normalize_audio: Added normalization function.
-        apply_filters: Added function to apply high-pass, low-pass, and notch filters.
-        Applied filtering to the audio data before or after peak calculation based on filter_timing.
+python voxel.py listdevs
 
-    Command-Line Options and Keyboard Controls:
-        Added --normalize and --filter command-line options.
-        Added --filter-timing command-line option to specify when to apply filtering (before or after peak calculation).
-        Added keyboard controls n to toggle normalization, F to toggle filtering, and T to toggle filter timing.
+Starting a Recording
 
-Steps to Run the Updated Script:
+To start recording audio with default settings:
 
-    Install soundfile and scipy:
+bash
 
-    sh
+python voxel.py record
 
-pip install soundfile scipy
+To start recording with custom settings:
 
-Run the Script:
+bash
 
-    List devices to find a suitable input device:
+python voxel.py record -c 4096 -d 1 -s 10 -t 0.5 -l 10 -n -F --harmonics 3 --rootpath /path/to/recordings --maxlength 60
 
-    sh
+Running as a Systemd Service
 
-python3 voxel.py listdevs
+To run this script as a systemd service, create a service file like the following:
 
-Start recording using a valid device number with normalization and filtering enabled, and specify when to apply filtering:
+ini
 
-sh
+[Unit]
+Description=Voxel Recording Service
+After=network.target
 
-        python3 voxel.py record -d <valid_device_number> --normalize --filter --filter-timing before
+[Service]
+ExecStart=/usr/bin/python3 /home/james/voxel/voxel.py record -c 8192 -d 2 -s 8 -t 0.3 -l 6 -n --rootpath /path/to/recordings --maxlength 60
+WorkingDirectory=/home/james/voxel
+StandardOutput=syslog
+StandardError=syslog
+Restart=always
+User=james
 
-Replace <valid_device_number> with the number of the device that supports input channels.
+[Install]
+WantedBy=multi-user.target
 
-This version of the script now allows you to choose whether the filtering takes place before or after the peak calculation, which can be specified via the --filter-timing command-line option or toggled during recording with the T key.
+Replace /path/to/recordings with the actual path where you want the recordings to be saved and adjust other parameters as necessary.
+Interactive Controls
+
+When running interactively, the following keyboard commands are supported:
+
+    h, ?: Display help.
+    f: Show current filename.
+    k: Show peak level.
+    v: Set new trigger level.
+    r: Toggle recording on/off.
+    p: Toggle peak display.
+    n: Toggle normalization.
+    F: Toggle filtering.
+    d: Display debug information.
+    q: Quit the application.
+
+Dependencies
+
+Ensure you have the following Python packages installed:
+
+    argparse
+    ctypes
+    pyaudio
+    numpy
+    soundfile
+    scipy
+
+You can install them using pip:
+
+bash
+
+pip install pyaudio numpy soundfile scipy
+
+Contributing
+
+Contributions are welcome! Please fork the repository and submit a pull request with your changes. Make sure to follow the code style and add tests for any new features or bug fixes.
+License
+
+This project is licensed under the MIT License. See the LICENSE file for details.
